@@ -16,6 +16,16 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preload" href="fonts/barlow-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
+<script>
+  /* aplica o tema salvo antes de desenhar a tela, sem piscar */
+  try {
+    var d = JSON.parse(localStorage.getItem('diario-treino-v1') || 'null');
+    if (d && d.tema === 'claro') {
+      document.documentElement.setAttribute('data-tema', 'claro');
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', '#FFFFFF');
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 <div class="shell">

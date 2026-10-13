@@ -89,7 +89,7 @@
       search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
       circle: '<circle cx="12" cy="12" r="8"/>',
       half: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
-      done: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.8 2.8L16.5 9.5" stroke="#1A0F08"/>'
+      done: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.8 2.8L16.5 9.5" style="stroke:var(--ink)"/>'
     }[nome];
     return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
   }
@@ -103,7 +103,7 @@
       t('B', 'Costas', [e('Puxada frontal', 4, 10, 0), e('Remada curvada', 4, 10, 0), e('Remada baixa', 3, 12, 0), e('Pulldown (corda)', 3, 15, 0)]),
       t('C', 'Pernas', [e('Agachamento livre', 4, 10, 0), e('Leg press 45°', 4, 12, 0), e('Cadeira extensora', 3, 12, 0), e('Mesa flexora', 3, 12, 0), e('Panturrilha em pé', 4, 15, 0)])
     ] };
-    return { v: 1, programas: [abc], ativoId: abc.id, historico: [], regra: 'descanso', sessao: null, ultimoBackup: null };
+    return { v: 1, programas: [abc], ativoId: abc.id, historico: [], regra: 'descanso', tema: 'escuro', sessao: null, ultimoBackup: null };
   }
 
   function valido(d) {
@@ -130,6 +130,7 @@
   function normalizar(d) {
     d.v = 1;
     d.regra = d.regra === 'estrita' ? 'estrita' : 'descanso';
+    d.tema = d.tema === 'claro' ? 'claro' : 'escuro';
     if (!d.programas.some(function (p) { return p.id === d.ativoId; })) d.ativoId = d.programas[0].id;
     if (d.sessao && !acharTreinoEm(d.programas, d.sessao.treinoId)) d.sessao = null;
     if (d.sessao) {
@@ -432,6 +433,7 @@
       salvar(); render();
     },
     grupo: function (g) { ui.grupo = g; ui.busca = ''; render(); },
+    tema: function (t) { D.tema = t === 'claro' ? 'claro' : 'escuro'; salvar(); render(); },
     regra: function (r) { D.regra = r === 'estrita' ? 'estrita' : 'descanso'; salvar(); render(); },
     abrirHist: function (id) { ui.abertoHist = ui.abertoHist === id ? null : id; render(); },
     excluirHist: function (id) { abrirConfirm({ tipo: 'excluirHist', alvo: id }); },
@@ -749,6 +751,9 @@
       (!emUso && D.programas.length > 1 ? '<button type="button" class="link" data-act="excluirDiv">Excluir esta divisão</button>' : '') + '</div></section>' +
       '<section class="section"><h2 class="section-title">Treinos da divisão</h2><div class="chips">' + letras +
       (ed.treinos.length < 7 ? '<button type="button" class="letter add" aria-label="Adicionar treino à divisão" data-act="addTreino">' + icon('plus', 20) + '</button>' : '') + '</div></section>' +
+      '<section class="section"><h2 class="section-title" id="tema-lbl">Aparência</h2><div class="temas" role="group" aria-labelledby="tema-lbl">' +
+      '<button type="button" class="tema-op" aria-pressed="' + (D.tema !== 'claro') + '" data-act="tema" data-arg="escuro"><span class="amostra" style="background:#101214" aria-hidden="true"><i style="background:#FF7A2F"></i></span>Preto e laranja</button>' +
+      '<button type="button" class="tema-op" aria-pressed="' + (D.tema === 'claro') + '" data-act="tema" data-arg="claro"><span class="amostra" style="background:#FFFFFF" aria-hidden="true"><i style="background:#C8102E"></i></span>Branco e vermelho</button></div></section>' +
       '<section class="section"><h2 class="section-title">Dados e backup</h2><div class="card flat" style="gap:10px">' +
       '<span class="small muted">' + (armazenamentoOk ? 'Os dados ficam salvos neste aparelho. ' : 'Este navegador está bloqueando o salvamento — exporte um backup antes de fechar. ') + esc(bk) + '</span>' +
       '<div class="row-actions">' + (podeCompartilhar ? '<button type="button" class="btn sm" data-act="compartilhar">' + icon('share', 18) + 'Enviar backup</button>' : '') +
@@ -795,7 +800,15 @@
     if (primeiro) primeiro.focus();
   }
 
+  function aplicarTema() {
+    var claro = D.tema === 'claro';
+    if (claro) document.documentElement.setAttribute('data-tema', 'claro'); else document.documentElement.removeAttribute('data-tema');
+    var m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', claro ? '#FFFFFF' : '#101214');
+    var cs = document.querySelector('meta[name="color-scheme"]'); if (cs) cs.setAttribute('content', claro ? 'light' : 'dark');
+  }
+
   function render() {
+    aplicarTema();
     var emSessao = !!D.sessao;
     $nav.hidden = emSessao;
     $shell.classList.toggle('com-nav', !emSessao);
