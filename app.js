@@ -4,7 +4,41 @@
 
   var CHAVE = 'diario-treino-v1';
   var LETRAS = 'ABCDEFG';
-  var BIBLIOTECA = ['Supino reto (barra)', 'Supino inclinado (halteres)', 'Crucifixo (máquina)', 'Crossover', 'Flexão de braço', 'Puxada frontal', 'Remada curvada', 'Remada baixa', 'Barra fixa', 'Pulldown (corda)', 'Agachamento livre', 'Leg press 45°', 'Cadeira extensora', 'Mesa flexora', 'Stiff', 'Panturrilha em pé', 'Desenvolvimento (halteres)', 'Elevação lateral', 'Rosca direta', 'Tríceps corda'];
+  var GRUPOS = [
+    { g: 'Peito', ex: ['Supino reto (barra)', 'Supino reto (halteres)', 'Supino reto (máquina)', 'Supino inclinado (barra)', 'Supino inclinado (halteres)', 'Supino inclinado (máquina)', 'Supino declinado (barra)', 'Supino declinado (halteres)', 'Crucifixo reto (halteres)', 'Crucifixo inclinado (halteres)', 'Crucifixo (máquina)', 'Crossover (polia alta)', 'Crossover (polia baixa)', 'Flexão de braço', 'Mergulho nas paralelas (peito)', 'Pullover (halter)'] },
+    { g: 'Costas', ex: ['Puxada frontal (pegada aberta)', 'Puxada frontal (triângulo)', 'Puxada supinada', 'Barra fixa', 'Barra fixa assistida (graviton)', 'Remada curvada (barra)', 'Remada curvada supinada', 'Remada unilateral (serrote)', 'Remada baixa (triângulo)', 'Remada cavalinho (T-bar)', 'Remada articulada (máquina)', 'Pulldown (corda)', 'Pulldown (barra reta)', 'Levantamento terra'] },
+    { g: 'Ombros', ex: ['Desenvolvimento (halteres)', 'Desenvolvimento (barra)', 'Desenvolvimento (máquina)', 'Desenvolvimento Arnold', 'Elevação lateral (halteres)', 'Elevação lateral (polia)', 'Elevação lateral (máquina)', 'Elevação frontal (halteres)', 'Elevação frontal (anilha)', 'Crucifixo inverso (halteres)', 'Crucifixo inverso (máquina)', 'Face pull (corda)', 'Remada alta (barra)'] },
+    { g: 'Trapézio', ex: ['Encolhimento (barra)', 'Encolhimento (halteres)', 'Encolhimento (máquina)'] },
+    { g: 'Bíceps', ex: ['Rosca direta (barra)', 'Rosca direta (barra W)', 'Rosca alternada (halteres)', 'Rosca martelo', 'Rosca concentrada', 'Rosca Scott (barra)', 'Rosca Scott (máquina)', 'Rosca na polia (barra)', 'Rosca inclinada (halteres)', 'Rosca 21'] },
+    { g: 'Tríceps', ex: ['Tríceps corda (polia)', 'Tríceps barra (polia)', 'Tríceps unilateral (polia)', 'Tríceps testa (barra W)', 'Tríceps francês (halter)', 'Tríceps coice (halter)', 'Tríceps banco', 'Mergulho nas paralelas (tríceps)', 'Supino fechado'] },
+    { g: 'Antebraço', ex: ['Rosca de punho', 'Rosca de punho inversa', 'Rosca inversa (barra)'] },
+    { g: 'Quadríceps', ex: ['Agachamento livre', 'Agachamento frontal', 'Agachamento no Smith', 'Agachamento hack (máquina)', 'Agachamento búlgaro', 'Agachamento sumô (halter)', 'Leg press 45°', 'Leg press horizontal', 'Cadeira extensora', 'Afundo (halteres)', 'Passada (avanço)', 'Subida no banco (step up)'] },
+    { g: 'Posterior de coxa', ex: ['Mesa flexora', 'Cadeira flexora', 'Flexora em pé (unilateral)', 'Stiff (barra)', 'Stiff (halteres)', 'Levantamento terra romeno', 'Bom dia (barra)'] },
+    { g: 'Glúteos e adutores', ex: ['Elevação pélvica (barra)', 'Elevação pélvica (máquina)', 'Ponte de glúteo', 'Glúteo na polia (coice)', 'Glúteo 4 apoios (máquina)', 'Cadeira abdutora', 'Cadeira adutora', 'Abdução na polia'] },
+    { g: 'Panturrilha', ex: ['Panturrilha em pé (máquina)', 'Panturrilha sentada', 'Panturrilha no leg press', 'Panturrilha no Smith', 'Panturrilha unilateral (halter)'] },
+    { g: 'Abdômen e lombar', ex: ['Abdominal supra (solo)', 'Abdominal na máquina', 'Abdominal na polia (ajoelhado)', 'Abdominal infra (elevação de pernas)', 'Elevação de pernas na barra', 'Abdominal oblíquo', 'Abdominal remador', 'Prancha', 'Prancha lateral', 'Roda abdominal', 'Russian twist', 'Hiperextensão lombar'] }
+  ];
+  var GRUPO_DE = {};
+  GRUPOS.forEach(function (gr) { gr.ex.forEach(function (n) { GRUPO_DE[n] = gr.g; }); });
+  var REGRAS_GRUPO = [
+    [/panturrilha/, 'Panturrilha'], [/encolhimento/, 'Trapézio'], [/punho/, 'Antebraço'],
+    [/abdominal|prancha|lombar|russian|roda abd|obl[ií]quo/, 'Abdômen e lombar'],
+    [/p[eé]lvica|gl[uú]teo|abdutora|adutora|abdu[cç][aã]o/, 'Glúteos e adutores'],
+    [/flexora|stiff|romeno|bom dia/, 'Posterior de coxa'],
+    [/agachamento|leg press|extensora|afundo|passada|b[uú]lgaro|step up|hack/, 'Quadríceps'],
+    [/tr[ií]ceps|testa|franc[eê]s|coice|supino fechado/, 'Tríceps'],
+    [/rosca/, 'Bíceps'],
+    [/desenvolvimento|eleva[cç][aã]o lateral|eleva[cç][aã]o frontal|face pull|crucifixo inverso|remada alta/, 'Ombros'],
+    [/supino|crucifixo|crossover|peck|flex[aã]o de bra[cç]o|pullover|peito/, 'Peito'],
+    [/puxada|remada|pulldown|barra fixa|terra|graviton/, 'Costas']
+  ];
+  function grupoDe(nome) {
+    if (GRUPO_DE[nome]) return GRUPO_DE[nome];
+    var n = String(nome || '').toLowerCase();
+    for (var i = 0; i < REGRAS_GRUPO.length; i++) if (REGRAS_GRUPO[i][0].test(n)) return REGRAS_GRUPO[i][1];
+    return 'Outros';
+  }
+  function semAcento(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
   var MEDALHAS = [{ n: 3, nome: 'Largada' }, { n: 5, nome: 'Ritmo' }, { n: 7, nome: 'Semana cheia' }, { n: 12, nome: 'Imparável' }, { n: 20, nome: 'Lenda do mês' }];
 
   var $view = document.getElementById('view');
@@ -16,7 +50,7 @@
   var D = null;               // dados salvos
   var armazenamentoOk = false;
   var persistenciaPedida = false;
-  var ui = { tela: 'treinar', editId: null, editTreinoId: null, picker: false, toast: '', confirm: null, abertoHist: null, evoTreino: null };
+  var ui = { tela: 'treinar', editId: null, editTreinoId: null, picker: false, grupo: 'Peito', busca: '', toast: '', confirm: null, abertoHist: null, evoTreino: null };
   var toastT = null;
   var wakeLock = null;
   var eventoInstalar = null;
@@ -47,7 +81,15 @@
       sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
       download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
       upload: '<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',
-      share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>'
+      share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>',
+      back: '<path d="M15 6l-6 6 6 6"/>',
+      up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+      down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+      equal: '<path d="M6 9.5h12M6 14.5h12"/>',
+      search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
+      circle: '<circle cx="12" cy="12" r="8"/>',
+      half: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+      done: '<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="M8 12.5l2.8 2.8L16.5 9.5" stroke="#1A0F08"/>'
     }[nome];
     return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
   }
@@ -90,6 +132,12 @@
     d.regra = d.regra === 'estrita' ? 'estrita' : 'descanso';
     if (!d.programas.some(function (p) { return p.id === d.ativoId; })) d.ativoId = d.programas[0].id;
     if (d.sessao && !acharTreinoEm(d.programas, d.sessao.treinoId)) d.sessao = null;
+    if (d.sessao) {
+      // sessões da versão 1.0: sem lista de concluídos/foco
+      if (!Array.isArray(d.sessao.feitos)) d.sessao.feitos = d.sessao.sets.map(function () { return false; });
+      if (d.sessao.atual === undefined) d.sessao.atual = null;
+    }
+    d.programas.forEach(function (p) { if (p.proximoId && !p.treinos.some(function (t) { return t.id === p.proximoId; })) p.proximoId = null; });
     return d;
   }
 
@@ -118,23 +166,40 @@
   function progEd() { return D.programas.find(function (p) { return p.id === ui.editId; }) || ativo(); }
   function treinoEd() { var p = progEd(); return p.treinos.find(function (t) { return t.id === ui.editTreinoId; }) || p.treinos[0]; }
 
-  function proximoTreino(p) {
+  /* Rodízio: o treino seguinte ao último feito. "proximoId" é o ajuste manual (faltas, nova semana). */
+  function proximoRodizio(p) {
     for (var i = D.historico.length - 1; i >= 0; i--) {
       var ix = p.treinos.findIndex(function (t) { return t.id === D.historico[i].treinoId; });
       if (ix >= 0) return p.treinos[(ix + 1) % p.treinos.length];
     }
     return p.treinos[0];
   }
+  function proximoTreino(p) {
+    var manual = p.proximoId && p.treinos.find(function (t) { return t.id === p.proximoId; });
+    return manual || proximoRodizio(p);
+  }
 
-  function ultimoDe(nome) {
-    for (var i = D.historico.length - 1; i >= 0; i--) {
-      var ex = D.historico[i].exs.find(function (x) { return x.nome === nome; });
-      if (ex && ex.sets.length) {
-        var b = ex.sets.reduce(function (a, x) { return x.carga > a.carga ? x : a; }, ex.sets[0]);
-        return 'Última vez (' + ddmm(D.historico[i].dia) + '): ' + kg(b.carga) + ' kg × ' + b.reps;
-      }
-    }
-    return '';
+  /* Referência de carga a partir do histórico (sem sugerir número). */
+  function refEx(nome) {
+    var regs = [];
+    D.historico.forEach(function (h) {
+      var e = h.exs.find(function (x) { return x.nome === nome; });
+      if (e && e.sets.length) regs.push({ dia: h.dia, sets: e.sets, top: Math.max.apply(null, e.sets.map(function (x) { return x.carga; })) });
+    });
+    if (!regs.length) return null;
+    var ult = regs[regs.length - 1], ant = regs.length > 1 ? regs[regs.length - 2] : null;
+    var recorde = Math.max.apply(null, regs.map(function (r) { return r.top; }));
+    var topSet = ult.sets.reduce(function (a, x) { return x.carga > a.carga ? x : a; }, ult.sets[0]);
+    return { ult: ult, ant: ant, recorde: recorde, topSet: topSet, tendencia: ant ? ult.top - ant.top : null, n: regs.length };
+  }
+  function seta(dif) {
+    if (dif > 0) return '<span class="trend up">' + icon('up', 14) + '+' + kg(dif) + ' kg</span>';
+    if (dif < 0) return '<span class="trend down">' + icon('down', 14) + '−' + kg(-dif) + ' kg</span>';
+    return '<span class="trend eq">' + icon('equal', 14) + 'mesma carga</span>';
+  }
+  function placeholderCarga(ex, j, ref) {
+    if (ref) { var s = ref.ult.sets[j] || ref.topSet; return kg(s.carga).replace(',', '.'); }
+    return ex.carga ? String(ex.carga) : '';
   }
 
   /* Sequência do mês. Regra "descanso": até 2 dias sem treino seguidos não quebram; o 3º quebra. */
@@ -182,6 +247,13 @@
     toastT = setTimeout(function () { ui.toast = ''; if (ui.tela === 'treinar' && !D.sessao) render(); }, 6000);
   }
 
+  var flashT = null;
+  function mostrarToastCurto(msg) {
+    ui.flash = msg;
+    clearTimeout(flashT);
+    flashT = setTimeout(function () { ui.flash = ''; var el = document.getElementById('flash'); if (el) el.textContent = ''; }, 2500);
+  }
+
   function irPara(tela, empurrar) {
     ui.tela = tela;
     ui.picker = false;
@@ -190,16 +262,24 @@
     window.scrollTo(0, 0);
   }
 
+  /* Campos começam vazios; o valor de referência aparece em cinza e é usado se a série for marcada sem digitar. */
   function novaSessao(t) {
     return {
-      treinoId: t.id, inicio: Date.now(),
+      treinoId: t.id, inicio: Date.now(), atual: null,
+      feitos: t.exs.map(function () { return false; }),
       sets: t.exs.map(function (ex) {
         var arr = [];
-        for (var k = 0; k < ex.series; k++) arr.push({ carga: String(ex.carga), reps: String(ex.reps), ok: false });
+        for (var k = 0; k < ex.series; k++) arr.push({ carga: '', reps: '', ok: false });
         return arr;
       })
     };
   }
+  function sugeridoIdx() {
+    var s = D.sessao;
+    for (var i = 0; i < s.feitos.length; i++) if (!s.feitos[i]) return i;
+    return -1;
+  }
+  function seriesOk(i) { return (D.sessao.sets[i] || []).filter(function (x) { return x.ok; }).length; }
 
   function pedirTelaLigada() {
     if (!('wakeLock' in navigator) || !D.sessao || document.visibilityState !== 'visible') return;
@@ -222,6 +302,7 @@
       ex.carga = feitas.reduce(function (a, x) { return x.carga > a ? x.carga : a; }, 0);
     });
     if (!total) return;
+    if (p) p.proximoId = null; // o rodízio volta a seguir a partir do treino feito
     var antes = sequencia(D.historico, D.regra);
     D.historico.push(reg);
     var depois = sequencia(D.historico, D.regra);
@@ -275,6 +356,7 @@
     renderOverlay();
     try { history.back(); } catch (e) {}
     if (c.tipo === 'descartar') { D.sessao = null; liberarTela(); }
+    else if (c.tipo === 'finalizarParcial') { finalizar(); return; }
     else if (c.tipo === 'excluirHist') { D.historico = D.historico.filter(function (h) { return h.id !== c.alvo; }); ui.abertoHist = null; }
     else if (c.tipo === 'excluirDiv') {
       D.programas = D.programas.filter(function (p) { return p.id !== ui.editId; });
@@ -313,14 +395,43 @@
       else { D.sessao = null; salvar(); liberarTela(); render(); }
     },
     toggleSet: function (arg) {
-      var ij = arg.split(','), x = D.sessao.sets[+ij[0]][+ij[1]];
+      var ij = arg.split(','), i = +ij[0], j = +ij[1], x = D.sessao.sets[i][j];
+      var ex = acharTreino(D.sessao.treinoId).exs[i];
+      if (!x.ok) {
+        // campos vazios assumem a referência mostrada em cinza
+        if (x.carga === '') x.carga = placeholderCarga(ex, j, refEx(ex.nome));
+        if (x.reps === '') x.reps = String(ex.reps);
+      }
       x.ok = !x.ok; salvar(); render();
     },
     addSet: function (i) {
-      var arr = D.sessao.sets[+i], u = arr[arr.length - 1] || { carga: '0', reps: '10' };
+      var arr = D.sessao.sets[+i], u = arr[arr.length - 1] || { carga: '', reps: '' };
       arr.push({ carga: u.carga, reps: u.reps, ok: false }); salvar(); render();
     },
-    finalizar: finalizar,
+    abrirEx: function (i) { D.sessao.atual = +i; salvar(); render(); window.scrollTo(0, 0); },
+    lista: function () { D.sessao.atual = null; salvar(); render(); window.scrollTo(0, 0); },
+    concluirEx: function () {
+      var s = D.sessao;
+      if (s.atual === null || !seriesOk(s.atual)) return;
+      var nome = acharTreino(s.treinoId).exs[s.atual].nome;
+      s.feitos[s.atual] = true;
+      s.atual = null;
+      s.aviso = nome + ' concluído.';
+      salvar(); render(); window.scrollTo(0, 0);
+    },
+    reabrirEx: function (i) { D.sessao.feitos[+i] = false; D.sessao.atual = +i; salvar(); render(); },
+    finalizar: function () {
+      var s = D.sessao, t = acharTreino(s.treinoId);
+      var pend = t.exs.filter(function (ex, i) { return !seriesOk(i); }).length;
+      if (pend) abrirConfirm({ tipo: 'finalizarParcial', pend: pend });
+      else finalizar();
+    },
+    definirProximo: function (id) {
+      var p = ativo();
+      p.proximoId = proximoRodizio(p).id === id ? null : id;
+      salvar(); render();
+    },
+    grupo: function (g) { ui.grupo = g; ui.busca = ''; render(); },
     regra: function (r) { D.regra = r === 'estrita' ? 'estrita' : 'descanso'; salvar(); render(); },
     abrirHist: function (id) { ui.abertoHist = ui.abertoHist === id ? null : id; render(); },
     excluirHist: function (id) { abrirConfirm({ tipo: 'excluirHist', alvo: id }); },
@@ -348,10 +459,17 @@
       ex[campo] = Math.min(max, Math.max(1, ex[campo] + d)); salvar(); render();
     },
     removerEx: function (i) { abrirConfirm({ tipo: 'removerEx', alvo: +i, nome: treinoEd().exs[+i].nome }); },
-    picker: function () { ui.picker = !ui.picker; render(); },
+    picker: function () {
+      ui.picker = !ui.picker; ui.busca = '';
+      var ex0 = treinoEd().exs[0], g0 = ex0 ? grupoDe(ex0.nome) : null;
+      if (ui.picker && GRUPOS.some(function (gr) { return gr.g === g0; })) ui.grupo = g0;
+      render();
+    },
     addEx: function (nome) {
       treinoEd().exs.push({ id: uid('e'), nome: nome || 'Novo exercício', series: 3, reps: 12, carga: 0 });
-      ui.picker = false; salvar(); render();
+      salvar();
+      if (nome) { mostrarToastCurto(nome + ' adicionado ao treino ' + treinoEd().letra + '.'); render(); return; }
+      ui.picker = false; render();
       if (!nome) { var ins = document.querySelectorAll('[data-bind^="exNome:"]'); var el = ins[ins.length - 1]; if (el) { el.focus(); el.select(); } }
     },
     exportar: function () { exportar('arquivo'); },
@@ -377,12 +495,15 @@
       var nomes = t.exs.map(function (x) { return x.nome; });
       var ult = null;
       for (var k = D.historico.length - 1; k >= 0; k--) if (D.historico[k].treinoId === t.id) { ult = D.historico[k]; break; }
-      var semCarga = t.exs.length && t.exs.every(function (x) { return !x.carga; });
+      var semCarga = t.exs.length && t.exs.every(function (x) { return !x.carga; }) && !t.exs.some(function (x) { return refEx(x.nome); });
+      var grupos = [];
+      t.exs.forEach(function (x) { var g = grupoDe(x.nome); if (grupos.indexOf(g) < 0) grupos.push(g); });
       return '<article class="card' + (ehProx ? ' next' : '') + '">' +
         '<div class="card-top"><div class="badge" aria-hidden="true">' + esc(t.letra) + '</div><div class="info">' +
         (ehProx ? '<span class="eyebrow accent">Próximo da sequência</span>' : '') +
         '<h2><span class="sr-only">Treino ' + esc(t.letra) + ': </span>' + esc(t.nome || 'Sem nome') + '</h2>' +
         '<span class="small muted">' + plural(t.exs.length, 'exercício', 'exercícios') + ' · ' + plural(series, 'série', 'séries') + '</span></div></div>' +
+        (grupos.length ? '<div class="tags">' + grupos.map(function (g) { return '<span class="tag-g">' + esc(g) + '</span>'; }).join('') + '</div>' : '') +
         '<p class="preview">' + (nomes.length ? esc(nomes.slice(0, 3).join(' · ')) + (nomes.length > 3 ? ' · +' + (nomes.length - 3) : '') : 'Sem exercícios — configure na aba Montar.') + '</p>' +
         (semCarga ? '<p class="small muted">Cargas ainda em 0 kg — ajuste no treino ou em Montar.</p>' : '') +
         '<div class="card-foot"><span class="small muted">' + (ult ? 'Último: ' + ddmm(ult.dia) : 'Ainda não realizado') + '</span>' +
@@ -400,39 +521,117 @@
       (ui.toast ? '<div class="toast" role="status">' + icon('check', 18) + '<span>' + esc(ui.toast) + '</span></div>' : '') +
       '<button type="button" class="streak" data-act="ir" data-arg="historico"><span class="ring">' + seq.atual + '</span><span class="txt"><strong>' + plural(seq.atual, 'dia', 'dias') + ' na sequência do mês</strong><span class="small muted">' + esc(seq.status) + '</span></span>' + icon('chev', 18) + '</button>' +
       lembrete +
+      vAjusteProximo(p, prox) +
       '<div class="grid-cards">' + cards + '</div>';
   }
 
+  function vAjusteProximo(p, prox) {
+    if (p.treinos.length < 2) return '';
+    var manual = !!p.proximoId;
+    var rod = proximoRodizio(p);
+    return '<section class="card flat ajuste" aria-labelledby="prox-lbl"><div class="ajuste-top"><span class="label" id="prox-lbl">Próximo treino</span>' +
+      (manual ? '<span class="pill">ajustado</span>' : '<span class="small muted">pelo rodízio</span>') + '</div>' +
+      '<div class="chips" role="group" aria-labelledby="prox-lbl">' + p.treinos.map(function (t) {
+        return '<button type="button" class="letter" aria-pressed="' + (t.id === prox.id) + '" aria-label="Definir treino ' + esc(t.letra) + ', ' + esc(t.nome || 'sem nome') + ', como próximo" data-act="definirProximo" data-arg="' + t.id + '">' + esc(t.letra) + '</button>';
+      }).join('') + '</div>' +
+      '<span class="small muted">' + (manual
+        ? 'Pelo rodízio seria o ' + esc(rod.letra) + '. Depois que você treinar, a sequência continua a partir do treino feito. <button type="button" class="link inline" data-act="definirProximo" data-arg="' + rod.id + '">Voltar ao rodízio</button>'
+        : 'Faltou ou a semana começou por outro treino? Toque na letra para ajustar.') + '</span></section>';
+  }
+
   function vSessao() {
-    var s = D.sessao, t = acharTreino(s.treinoId), tot = 0, ok = 0;
-    var exs = t.exs.map(function (ex, i) {
-      var sets = s.sets[i] || [];
-      var okEx = sets.filter(function (x) { return x.ok; }).length;
-      tot += sets.length; ok += okEx;
-      var u = ultimoDe(ex.nome);
-      var linhas = sets.map(function (x, j) {
-        var rot = esc(ex.nome) + ', série ' + (j + 1);
-        return '<div class="set-grid set-row' + (x.ok ? ' ok' : '') + '">' +
-          '<span class="set-n">' + (j + 1) + '</span>' +
-          '<input class="num" type="number" inputmode="decimal" step="0.5" min="0" enterkeyhint="next" aria-label="' + rot + ': carga em kg" value="' + esc(x.carga) + '" data-set="' + i + ',' + j + ',carga">' +
-          '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" aria-label="' + rot + ': repetições" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
-          '<button type="button" class="check" aria-pressed="' + x.ok + '" aria-label="' + (x.ok ? 'Desmarcar ' : 'Concluir ') + rot + '" data-act="toggleSet" data-arg="' + i + ',' + j + '">' + icon('check', 20) + '</button>' +
-          '</div>';
-      }).join('');
-      return '<section class="ex-card"><div class="ex-head"><h3>' + esc(ex.nome) + '</h3><span class="small muted">' + okEx + '/' + sets.length + '</span></div>' +
-        '<div class="ex-meta"><span>Meta ' + ex.series + ' × ' + ex.reps + ' · ' + kg(ex.carga) + ' kg</span>' + (u ? '<span class="ult">' + esc(u) + '</span>' : '') + '</div>' +
-        '<div class="set-grid set-labels" aria-hidden="true"><span>Série</span><span>Carga (kg)</span><span>Reps</span><span></span></div>' +
-        linhas +
-        '<button type="button" class="link" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;color:var(--text-2)" data-act="addSet" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar série</button></section>';
+    return D.sessao.atual === null ? vSessaoLista() : vSessaoFoco();
+  }
+
+  function cabecalhoSessao(t, esquerda) {
+    return '<div class="sess-head"><div class="sess-row">' + esquerda +
+      '<span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></div>';
+  }
+
+  function linhaRef(ref) {
+    if (!ref) return '<span class="small muted">Primeira vez — sem registro anterior.</span>';
+    return '<span class="small">Última (' + ddmm(ref.ult.dia) + '): <b>' + kg(ref.topSet.carga) + ' kg × ' + ref.topSet.reps + '</b></span>' +
+      (ref.tendencia !== null ? seta(ref.tendencia) : '');
+  }
+
+  /* Parte 1: todos os exercícios do treino; o app sugere o próximo e deixa trocar a ordem. */
+  function vSessaoLista() {
+    var s = D.sessao, t = acharTreino(s.treinoId);
+    var feitos = s.feitos.filter(Boolean).length, okTot = 0;
+    s.sets.forEach(function (a, i) { okTot += seriesOk(i); });
+    var sug = sugeridoIdx();
+    var pct = t.exs.length ? Math.round(feitos / t.exs.length * 100) : 0;
+    var aviso = s.aviso ? '<div class="toast" role="status">' + icon('check', 18) + '<span>' + esc(s.aviso) + '</span></div>' : '';
+    if (s.aviso) { s.aviso = ''; salvar(); }
+
+    var destaque = '';
+    if (sug >= 0) {
+      var ex = t.exs[sug], ref = refEx(ex.nome);
+      destaque = '<section class="card next sug" aria-labelledby="sug-t"><span class="eyebrow accent">' + (feitos ? 'A seguir' : 'Comece por') + '</span>' +
+        '<h2 id="sug-t">' + esc(ex.nome) + '</h2>' +
+        '<span class="small muted">' + esc(grupoDe(ex.nome)) + ' · meta ' + ex.series + ' × ' + ex.reps + '</span>' +
+        '<div class="ref-line">' + linhaRef(ref) + '</div>' +
+        '<button type="button" class="btn primary block" data-act="abrirEx" data-arg="' + sug + '">' + icon('play', 14) + 'Começar este exercício</button>' +
+        '<span class="small muted">Aparelho ocupado? Escolha outro da lista abaixo.</span></section>';
+    } else {
+      destaque = '<section class="card next sug"><span class="eyebrow accent">Tudo feito</span><h2>Todos os exercícios concluídos</h2><span class="small muted">Finalize para salvar o treino no histórico.</span></section>';
+    }
+
+    var itens = t.exs.map(function (ex, i) {
+      var ok = seriesOk(i), tot = (s.sets[i] || []).length, feito = s.feitos[i];
+      var ref = refEx(ex.nome);
+      var est = feito ? 'done' : ok ? 'half' : 'circle';
+      var status = feito ? 'Feito · ' + ok + '/' + tot : ok ? ok + '/' + tot + ' séries' : (i === sug ? 'Sugerido' : 'Pendente');
+      return '<li><button type="button" class="ex-item' + (feito ? ' feito' : '') + (i === sug ? ' sug' : '') + '" data-act="' + (feito ? 'reabrirEx' : 'abrirEx') + '" data-arg="' + i + '">' +
+        '<span class="st st-' + est + '" aria-hidden="true">' + icon(est, 22) + '</span>' +
+        '<span class="mid"><b>' + esc(ex.nome) + '</b><span class="small muted">' + ex.series + ' × ' + ex.reps + (ref ? ' · última ' + kg(ref.topSet.carga) + ' kg' : '') + '</span></span>' +
+        '<span class="small st-txt">' + status + '</span></button></li>';
     }).join('');
-    var pct = tot ? Math.round(ok / tot * 100) : 0;
-    return '<div class="sess-head"><div class="sess-row"><button type="button" class="link" style="text-decoration:none;color:var(--text-2);font-size:15px" data-act="cancelar">Cancelar</button>' +
-      '<span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></div>' +
-      '<div class="sess-title"><div class="badge on" aria-hidden="true">' + esc(t.letra) + '</div><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span class="eyebrow">Em andamento · salvo automaticamente</span><h1>' + esc(t.nome) + '</h1></div></div>' +
-      '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + tot + '" aria-valuenow="' + ok + '" aria-label="Séries concluídas"><span style="width:' + pct + '%"></span></div><span class="small" style="color:var(--text-2);white-space:nowrap">' + ok + ' de ' + tot + ' séries</span></div></div>' +
-      '<div class="sess-list">' + exs + '</div>' +
-      '<div class="sess-foot"><div class="sess-foot-inner">' + (ok ? '' : '<span class="hint">Marque ao menos uma série para salvar.</span>') +
-      '<button type="button" class="btn primary block" data-act="finalizar"' + (ok ? '' : ' disabled') + '>Finalizar e salvar treino</button></div></div>';
+
+    return cabecalhoSessao(t, '<button type="button" class="link plain" data-act="cancelar">Cancelar</button>') +
+      '<div class="sess-title"><div class="badge on" aria-hidden="true">' + esc(t.letra) + '</div><div class="sess-title-txt"><span class="eyebrow">Treino em andamento · salvo automaticamente</span><h1>' + esc(t.nome) + '</h1></div></div>' +
+      '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + t.exs.length + '" aria-valuenow="' + feitos + '" aria-label="Exercícios concluídos"><span style="width:' + pct + '%"></span></div><span class="small soft nowrap">' + feitos + ' de ' + t.exs.length + ' exercícios</span></div></div>' +
+      '<div class="sess-list">' + aviso + destaque +
+      '<section class="section"><h2 class="section-title">Exercícios do treino</h2><ul class="ex-list">' + itens + '</ul></section></div>' +
+      '<div class="sess-foot"><div class="sess-foot-inner">' + (okTot ? '' : '<span class="hint">Registre ao menos uma série para salvar.</span>') +
+      '<button type="button" class="btn ' + (sug < 0 ? 'primary' : '') + ' block" data-act="finalizar"' + (okTot ? '' : ' disabled') + '>Finalizar e salvar treino</button></div></div>';
+  }
+
+  /* Parte 2: só o exercício em execução. */
+  function vSessaoFoco() {
+    var s = D.sessao, t = acharTreino(s.treinoId), i = s.atual, ex = t.exs[i];
+    if (!ex) { s.atual = null; return vSessaoLista(); }
+    var sets = s.sets[i] || [], ref = refEx(ex.nome), ok = seriesOk(i);
+    var hojeTop = sets.filter(function (x) { return x.ok; }).reduce(function (a, x) { return Math.max(a, num(x.carga)); }, 0);
+
+    var refCard = '<div class="ref-card">' + (ref
+      ? '<div class="ref-row"><span class="muted small">Última vez · ' + ddmm(ref.ult.dia) + '</span><span class="ref-sets">' + ref.ult.sets.map(function (x) { return kg(x.carga) + '×' + x.reps; }).join('  ·  ') + '</span></div>' +
+        '<div class="ref-row two"><span><span class="muted small">Recorde</span> <b>' + kg(ref.recorde) + ' kg</b></span>' + (ref.tendencia !== null ? '<span><span class="muted small">vs. anterior</span> ' + seta(ref.tendencia) + '</span>' : '') + '</div>' +
+        (ok ? '<div class="ref-row hoje"><span class="muted small">Hoje (maior carga)</span><span><b>' + kg(hojeTop) + ' kg</b> ' + seta(hojeTop - ref.ult.top) + '<span class="muted small"> vs. última</span></span></div>' : '')
+      : '<span class="muted small">Primeira vez neste exercício. Os valores de hoje viram a referência do próximo treino.</span>') + '</div>';
+
+    var linhas = sets.map(function (x, j) {
+      var rot = esc(ex.nome) + ', série ' + (j + 1);
+      var ph = placeholderCarga(ex, j, ref);
+      return '<div class="set-grid set-row' + (x.ok ? ' ok' : '') + '">' +
+        '<span class="set-n">' + (j + 1) + '</span>' +
+        '<input class="num" type="number" inputmode="decimal" step="0.5" min="0" enterkeyhint="next" placeholder="' + esc(ph || 'kg') + '" aria-label="' + rot + ': carga em kg' + (ph ? ' (referência ' + esc(ph) + ')' : '') + '" value="' + esc(x.carga) + '" data-set="' + i + ',' + j + ',carga">' +
+        '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" placeholder="' + ex.reps + '" aria-label="' + rot + ': repetições (meta ' + ex.reps + ')" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
+        '<button type="button" class="check" aria-pressed="' + x.ok + '" aria-label="' + (x.ok ? 'Desmarcar ' : 'Concluir ') + rot + '" data-act="toggleSet" data-arg="' + i + ',' + j + '">' + icon('check', 20) + '</button>' +
+        '</div>';
+    }).join('');
+
+    return cabecalhoSessao(t, '<button type="button" class="link plain back" data-act="lista">' + icon('back', 18) + 'Exercícios</button>') +
+      '<div class="sess-row"><span class="eyebrow">Treino ' + esc(t.letra) + ' · exercício ' + (i + 1) + ' de ' + t.exs.length + '</span><span class="small soft nowrap">' + ok + '/' + sets.length + ' séries</span></div></div>' +
+      '<div class="sess-list foco">' +
+      '<header class="foco-head"><h1>' + esc(ex.nome) + '</h1><span class="small muted">' + esc(grupoDe(ex.nome)) + ' · meta ' + ex.series + ' × ' + ex.reps + '</span></header>' +
+      refCard +
+      '<section class="ex-card" aria-label="Séries"><div class="set-grid set-labels" aria-hidden="true"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>' +
+      linhas +
+      '<button type="button" class="link plain add" data-act="addSet" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar série</button>' +
+      '<span class="small muted">Campo vazio usa o valor em cinza ao marcar a série.</span></section></div>' +
+      '<div class="sess-foot"><div class="sess-foot-inner">' + (ok ? '' : '<span class="hint">Marque ao menos uma série para concluir.</span>') +
+      '<button type="button" class="btn primary block" data-act="concluirEx"' + (ok ? '' : ' disabled') + '>Concluir exercício</button></div></div>';
   }
 
   function tempoSessao() {
@@ -520,13 +719,24 @@
       return '<div class="ex-edit"><div class="ex-edit-top"><span class="idx" aria-hidden="true">' + (i + 1) + '</span>' +
         '<input class="input" type="text" aria-label="Nome do exercício ' + (i + 1) + '" value="' + esc(ex.nome) + '" data-bind="exNome:' + i + '" enterkeyhint="done">' +
         '<button type="button" class="icon-btn" aria-label="Remover ' + esc(ex.nome) + '" data-act="removerEx" data-arg="' + i + '">' + icon('trash', 18) + '</button></div>' +
+        '<span class="tag-g self">' + esc(grupoDe(ex.nome)) + '</span>' +
         '<div class="ex-edit-grid">' +
         '<div class="field" style="gap:4px"><span class="mini-label" id="s' + i + '">Séries</span><div class="stepper" role="group" aria-labelledby="s' + i + '"><button type="button" aria-label="Menos uma série" data-act="step" data-arg="' + i + ',series,-1">−</button><output>' + ex.series + '</output><button type="button" aria-label="Mais uma série" data-act="step" data-arg="' + i + ',series,1">+</button></div></div>' +
         '<div class="field" style="gap:4px"><span class="mini-label" id="r' + i + '">Reps</span><div class="stepper" role="group" aria-labelledby="r' + i + '"><button type="button" aria-label="Menos uma repetição" data-act="step" data-arg="' + i + ',reps,-1">−</button><output>' + ex.reps + '</output><button type="button" aria-label="Mais uma repetição" data-act="step" data-arg="' + i + ',reps,1">+</button></div></div>' +
-        '<div class="field" style="gap:4px"><label class="mini-label" for="c' + i + '">Carga kg</label><input id="c' + i + '" class="num" type="number" inputmode="decimal" step="0.5" min="0" value="' + esc(ex.carga) + '" data-bind="exCarga:' + i + '"></div>' +
+        '<div class="field" style="gap:4px"><label class="mini-label" for="c' + i + '">Carga kg</label><input id="c' + i + '" class="num" type="number" inputmode="decimal" step="0.5" min="0" placeholder="0" value="' + (ex.carga ? esc(ex.carga) : '') + '" data-bind="exCarga:' + i + '"></div>' +
         '</div></div>';
     }).join('');
-    var lib = BIBLIOTECA.map(function (n) { return '<button type="button" class="chip square" data-act="addEx" data-arg="' + esc(n) + '">' + esc(n) + '</button>'; }).join('');
+    var noTreino = te.exs.map(function (x) { return x.nome; });
+    var abas = GRUPOS.map(function (gr) {
+      return '<button type="button" class="chip sm-chip" aria-pressed="' + (ui.grupo === gr.g) + '" data-act="grupo" data-arg="' + esc(gr.g) + '">' + esc(gr.g) + '</button>';
+    }).join('');
+    var lib = GRUPOS.map(function (gr) {
+      return '<div class="lib-grupo" data-grupo="' + esc(gr.g) + '"' + (ui.grupo === gr.g ? '' : ' hidden') + '><span class="lib-g">' + esc(gr.g) + '</span><div class="chips">' +
+        gr.ex.map(function (n) {
+          var ja = noTreino.indexOf(n) >= 0;
+          return '<button type="button" class="chip square' + (ja ? ' ja' : '') + '" data-busca="' + esc(semAcento(n + ' ' + gr.g)) + '" data-act="addEx" data-arg="' + esc(n) + '"' + (ja ? ' aria-label="' + esc(n) + ', já está no treino. Adicionar de novo"' : '') + '>' + (ja ? icon('check', 14) : '') + esc(n) + '</button>';
+        }).join('') + '</div></div>';
+    }).join('');
     var bk = D.ultimoBackup ? 'Último backup: ' + new Date(D.ultimoBackup).toLocaleDateString('pt-BR') + '.' : 'Nenhum backup feito ainda.';
     var podeCompartilhar = !!(navigator.canShare && window.File);
 
@@ -550,7 +760,11 @@
       '<section class="card flat" style="gap:14px" aria-label="Editar treino ' + esc(te.letra) + '"><div class="field"><label for="foco-treino">Treino ' + esc(te.letra) + ' · foco</label><input id="foco-treino" class="input title" type="text" value="' + esc(te.nome) + '" data-bind="treinoNome" enterkeyhint="done"></div>' +
       (exs || '<p class="muted">Nenhum exercício neste treino ainda.</p>') +
       '<button type="button" class="btn outline block" aria-expanded="' + ui.picker + '" data-act="picker">' + icon('plus', 18) + 'Adicionar exercício</button>' +
-      (ui.picker ? '<div class="picker"><span class="label">Toque para adicionar</span><div class="chips">' + lib + '<button type="button" class="chip square dashed" data-act="addEx" data-arg="">Outro (personalizado)</button></div></div>' : '') +
+      (ui.picker ? '<div class="picker"><div class="busca">' + icon('search', 18) + '<input id="busca-ex" class="input" type="search" placeholder="Buscar exercício" aria-label="Buscar exercício" value="' + esc(ui.busca) + '" enterkeyhint="search"></div>' +
+        '<div class="chips grupos" role="group" aria-label="Grupamento muscular">' + abas + '</div>' +
+        '<div id="lib">' + lib + '<p class="small muted" id="lib-vazio" hidden>Nenhum exercício encontrado. Use "Outro (personalizado)".</p></div>' +
+        '<span class="small soft" id="flash" role="status">' + esc(ui.flash || '') + '</span>' +
+        '<div class="row-actions"><button type="button" class="chip square dashed" data-act="addEx" data-arg="">Outro (personalizado)</button><button type="button" class="btn sm" data-act="picker">Fechar lista</button></div></div>' : '') +
       (ed.treinos.length > 1 ? '<button type="button" class="link" data-act="removerTreino">Excluir treino ' + esc(te.letra) + '</button>' : '') +
       '</section></div>';
   }
@@ -565,6 +779,7 @@
     if (!c) { $overlay.innerHTML = ''; return; }
     var ed = progEd(), te = treinoEd();
     var txt = {
+      finalizarParcial: ['Finalizar com exercícios pendentes?', plural(c.pend || 0, 'exercício ficou', 'exercícios ficaram') + ' sem nenhuma série marcada e não entra' + ((c.pend || 0) === 1 ? '' : 'm') + ' no registro de hoje.', 'Finalizar', 'Voltar ao treino'],
       descartar: ['Descartar este treino?', 'As séries marcadas não serão salvas e o dia não conta na sequência.', 'Descartar', 'Continuar treino'],
       excluirHist: ['Excluir este registro?', 'Ele sai do histórico e pode reduzir sua sequência e medalhas do mês.', 'Excluir', 'Manter'],
       excluirDiv: ['Excluir a divisão "' + (ed.nome || 'sem nome') + '"?', 'Os treinos configurados nela serão apagados. O histórico já registrado continua.', 'Excluir', 'Manter'],
@@ -588,6 +803,7 @@
     if (!emSessao) $nav.innerHTML = vNav();
     var html = emSessao ? vSessao() : ui.tela === 'historico' ? vHistorico() : ui.tela === 'montar' ? vMontar() : vTreinar();
     $view.innerHTML = html;
+    aplicarBusca();
     document.title = (emSessao ? 'Treinando' : ui.tela === 'historico' ? 'Histórico' : ui.tela === 'montar' ? 'Montar' : 'Treinar') + ' · Diário de Treino';
     renderOverlay();
   }
@@ -605,6 +821,7 @@
 
   document.addEventListener('input', function (e) {
     var el = e.target, v = el.value;
+    if (el.id === 'busca-ex') { ui.busca = v; aplicarBusca(); return; }
     var set = el.getAttribute('data-set');
     if (set && D.sessao) {
       var a = set.split(','); D.sessao.sets[+a[0]][+a[1]][a[2]] = v; salvar(); return;
@@ -617,6 +834,42 @@
     else if (parts[0] === 'exNome') treinoEd().exs[+parts[1]].nome = v;
     else if (parts[0] === 'exCarga') treinoEd().exs[+parts[1]].carga = v === '' ? 0 : num(v);
     salvar();
+  });
+
+  function aplicarBusca() {
+    var lib = document.getElementById('lib');
+    if (!lib) return;
+    var q = semAcento(ui.busca).trim(), algum = false;
+    lib.querySelectorAll('.lib-grupo').forEach(function (sec) {
+      var vis = 0;
+      sec.querySelectorAll('[data-busca]').forEach(function (b) {
+        var ok = !q || b.getAttribute('data-busca').indexOf(q) >= 0;
+        b.hidden = !ok; if (ok) vis++;
+      });
+      sec.hidden = q ? vis === 0 : sec.getAttribute('data-grupo') !== ui.grupo;
+      if (!sec.hidden) algum = true;
+    });
+    var vazio = document.getElementById('lib-vazio'); if (vazio) vazio.hidden = algum;
+    document.querySelectorAll('.grupos').forEach(function (g) { g.hidden = !!q; });
+  }
+
+  // Ao tocar num campo numérico, seleciona o conteúdo: digitar substitui em vez de somar dígitos.
+  document.addEventListener('focusin', function (e) {
+    var el = e.target;
+    if (!el.classList || !el.classList.contains('num')) return;
+    try { el.select(); } catch (err) {}
+    el.setAttribute('data-sel', '1');
+  });
+  // O toque que deu foco não pode desfazer a seleção.
+  ['mouseup', 'pointerup', 'touchend'].forEach(function (tipo) {
+    document.addEventListener(tipo, function (e) {
+      var el = e.target;
+      if (el.getAttribute && el.getAttribute('data-sel')) {
+        el.removeAttribute('data-sel');
+        if (tipo !== 'touchend') e.preventDefault();
+        setTimeout(function () { try { if (document.activeElement === el) el.select(); } catch (err) {} }, 0);
+      }
+    });
   });
 
   document.addEventListener('keydown', function (e) {
@@ -674,6 +927,12 @@
   if (D.sessao) pedirTelaLigada();
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    var tinhaControle = !!navigator.serviceWorker.controller, recarregou = false;
+    // Versão nova instalada: recarrega para usá-la (nunca no meio de um treino).
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!tinhaControle || recarregou || D.sessao || ui.confirm) return;
+      recarregou = true; location.reload();
+    });
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 })();
