@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.0.0';
+  var VERSAO_APP = '2.1.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -163,6 +163,8 @@
   }
   function normalizarSessao(s, t) {
     if (!s.id) s.id = uid('h');
+    if (!Array.isArray(s.exs) || !s.exs.length && t.exs.length) s.exs = clone(t.exs); // sessões antigas: copia do treino
+    t = { exs: s.exs };
     if (!Array.isArray(s.sets)) s.sets = [];
     s.sets = s.sets.map(function (x) { return Array.isArray(x) ? x : (x && Array.isArray(x.s) ? x.s : []); }); // formato da nuvem → local
     while (s.sets.length < t.exs.length) s.sets.push([]);
@@ -293,12 +295,13 @@
   /* ---------- sessão em andamento ---------- */
   function novaSessao(t) {
     return {
-      id: uid('h'), treinoId: t.id, inicio: Date.now(), atual: null,
+      id: uid('h'), treinoId: t.id, inicio: Date.now(), atual: null, exs: clone(t.exs),
       feitos: t.exs.map(function () { return false; }),
       ordem: t.exs.map(function (x, i) { return i; }),
       sets: t.exs.map(function (ex) { var a = []; for (var k = 0; k < ex.series; k++) a.push({ carga: '', reps: '', ok: false }); return a; })
     };
   }
+  function exsSessao() { return D.sessao.exs; }
   function seriesOk(i) { return (D.sessao.sets[i] || []).filter(function (x) { return x.ok; }).length; }
   function sugeridoIdx() {
     var s = D.sessao;
@@ -324,12 +327,13 @@
     var p = D.programas.find(function (pp) { return pp.treinos.indexOf(t) >= 0; });
     var reg = { id: s.id, dia: diaKey(new Date()), treinoId: t.id, letra: t.letra, nome: t.nome, divisao: p ? p.nome : '', duracao: Math.max(1, Math.round((Date.now() - s.inicio) / 60000)), exs: [] };
     s.ordem.forEach(function (i) {
-      var ex = t.exs[i];
+      var ex = s.exs[i];
       var feitas = (s.sets[i] || []).filter(function (x) { return x.ok; }).map(function (x) { return { carga: num(x.carga), reps: parseInt(x.reps, 10) || 0 }; });
       total += feitas.length;
       if (!feitas.length) return;
       reg.exs.push({ nome: ex.nome, sets: feitas });
-      ex.carga = feitas.reduce(function (a, x) { return x.carga > a ? x.carga : a; }, 0);
+      var noTreino = t.exs.find(function (x) { return x.id === ex.id; });
+      if (noTreino) noTreino.carga = feitas.reduce(function (a, x) { return x.carga > a ? x.carga : a; }, 0);
     });
     if (!total) return;
     if (p) p.proximoId = null;
@@ -365,7 +369,7 @@
     if (!window.Nuvem || !sync.usuario) return;
     window.Nuvem.gravar(sync.usuario.uid, rel, dados).catch(function (e) {
       if (desfazer) desfazer();
-      if (e && e.code === 'permission-denied') { sync.negado = true; render(); }
+      if (e && e.code === 'permission-denied') { sync.negado = true; sync.erroDetalhe = { codigo: e.code, onde: 'gravar' }; render(); }
       renderSync();
     });
   }
@@ -457,7 +461,7 @@
       },
       live: tratarLive,
       erro: function (e) {
-        if (e && e.code === 'permission-denied') sync.negado = true; else sync.erro = (e && e.code) || 'erro';
+        if (e && e.code === 'permission-denied') { sync.negado = true; sync.erroDetalhe = { codigo: e.code, onde: 'sincronizar' }; } else sync.erro = (e && e.code) || 'erro';
         renderSync(); render();
       }
     });
@@ -528,7 +532,7 @@
       else { sync.conflito = r; abrirConfirm({ tipo: 'migrarConflito', nl: locais.length, nr: remotoVivos.length, pl: pesagensVivas().length, pr: r.weights.filter(function (w) { return !w.apagado; }).length }); }
     }).catch(function (e) {
       sync.verificando = false;
-      if (e && e.code === 'permission-denied') sync.negado = true;
+      if (e && e.code === 'permission-denied') { sync.negado = true; sync.erroDetalhe = { codigo: e.code, onde: 'ler' }; }
       else mostrarToast('Não foi possível ler a nuvem agora (' + ((e && e.code) || 'erro') + '). Tente de novo em Ajustes.');
       render();
     });
@@ -653,6 +657,15 @@
     voltarDialogo();
     if (c.tipo === 'descartar') { D.sessao = null; liberarTela(); }
     else if (c.tipo === 'finalizarParcial') { finalizar(); return; }
+    else if (c.tipo === 'sessRemover') {
+      var ss = D.sessao, i = c.alvo, ex = ss.exs[i], tt = acharTreino(ss.treinoId);
+      ss.exs.splice(i, 1); ss.sets.splice(i, 1); ss.feitos.splice(i, 1);
+      ss.ordem = ss.ordem.filter(function (x) { return x !== i; }).map(function (x) { return x > i ? x - 1 : x; });
+      if (ss.atual === i) ss.atual = null; else if (ss.atual !== null && ss.atual > i) ss.atual--;
+      if (ss.atual === null) { var sg = sugeridoIdx(); ss.atual = sg >= 0 ? sg : null; }
+      if (c.perm && tt) { tt.exs = tt.exs.filter(function (x) { return x.id !== ex.id; }); marcarEdicao(); }
+      ss.aviso = ex.nome + ' removido' + (c.perm ? ' deste treino e das próximas vezes.' : ' só de hoje.');
+    }
     else if (c.tipo === 'excluirHist') { var h = D.historico.find(function (x) { return x.id === c.alvo; }); if (h) h.apagado = true; ui.abertoHist = {}; }
     else if (c.tipo === 'excluirPeso') { var pz = D.pesagens.find(function (x) { return x.id === c.alvo; }); if (pz) pz.apagado = true; ui.abertoPeso = null; }
     else if (c.tipo === 'excluirDiv') {
@@ -799,7 +812,7 @@
     },
     toggleSet: function (arg) {
       var ij = arg.split(','), i = +ij[0], j = +ij[1], x = D.sessao.sets[i][j];
-      var ex = acharTreino(D.sessao.treinoId).exs[i];
+      var ex = D.sessao.exs[i];
       if (!x.ok) {
         if (x.carga === '') x.carga = placeholderCarga(ex, j, refEx(ex.nome));
         if (x.reps === '') x.reps = String(ex.reps);
@@ -822,18 +835,49 @@
     concluirEx: function () {
       var s = D.sessao;
       if (s.atual === null || !seriesOk(s.atual)) return;
-      var nome = acharTreino(s.treinoId).exs[s.atual].nome;
+      var nome = s.exs[s.atual].nome;
       s.feitos[s.atual] = true;
       var prox = sugeridoIdx();
       s.atual = prox >= 0 ? prox : null;
-      s.aviso = nome + ' concluído.' + (prox >= 0 ? ' A seguir: ' + acharTreino(s.treinoId).exs[prox].nome + ' — ou abra outro da lista.' : ' Todos os exercícios feitos.');
+      s.aviso = nome + ' concluído.' + (prox >= 0 ? ' A seguir: ' + s.exs[prox].nome + ' — ou abra outro da lista.' : ' Todos os exercícios feitos.');
       salvar(); render();
       if (prox >= 0) rolarPara('exg-' + prox);
     },
     finalizar: function () {
-      var s = D.sessao, t = acharTreino(s.treinoId);
-      var pend = t.exs.filter(function (ex, i) { return !seriesOk(i); }).length;
+      var s = D.sessao;
+      var pend = s.exs.filter(function (ex, i) { return !seriesOk(i); }).length;
       if (pend) abrirConfirm({ tipo: 'finalizarParcial', pend: pend }); else finalizar();
+    },
+    sessAdicionar: function () { ui.busca = ''; abrirConfirm({ tipo: 'exSessao', modo: 'add', perm: false }); },
+    sessTrocar: function (i) {
+      var ex = D.sessao.exs[+i]; ui.busca = '';
+      if (GRUPOS.some(function (gr) { return gr.g === grupoDe(ex.nome); })) ui.grupo = grupoDe(ex.nome);
+      abrirConfirm({ tipo: 'exSessao', modo: 'trocar', idx: +i, perm: false });
+    },
+    sessRemover: function (i) { abrirConfirm({ tipo: 'sessRemover', alvo: +i, perm: false }); },
+    exPerm: function () { if (ui.confirm) ui.confirm.perm = !ui.confirm.perm; },
+    escolherEx: function (nome) {
+      var c = ui.confirm, s = D.sessao, t = acharTreino(s.treinoId);
+      if (!nome) { var el = document.getElementById('ex-custom'); nome = el ? el.value.trim() : ''; if (!nome) { if (el) el.focus(); mostrarFlash('Digite o nome do exercício.'); var f = document.getElementById('flash'); if (f) f.textContent = 'Digite o nome do exercício.'; return; } }
+      function vazias(n) { var a = []; for (var k = 0; k < n; k++) a.push({ carga: '', reps: '', ok: false }); return a; }
+      var alvo;
+      if (c.modo === 'add') {
+        var novo = { id: uid('e'), nome: nome, series: 3, reps: 12, carga: 0 };
+        s.exs.push(novo); s.sets.push(vazias(3)); s.feitos.push(false);
+        alvo = s.exs.length - 1; s.ordem.push(alvo);
+        if (c.perm && t) { t.exs.push(clone(novo)); marcarEdicao(); }
+        s.aviso = nome + ' adicionado' + (c.perm ? ' a este treino e às próximas vezes.' : ' só para hoje.');
+      } else {
+        var velho = s.exs[c.idx]; alvo = c.idx;
+        s.exs[c.idx] = { id: c.perm ? velho.id : uid('e'), nome: nome, series: velho.series, reps: velho.reps, carga: 0 };
+        if (!c.perm) s.exs[c.idx].trocadoDe = velho.trocadoDe || velho.nome;
+        s.sets[c.idx] = vazias(velho.series); s.feitos[c.idx] = false;
+        if (c.perm && t) { var no = t.exs.find(function (x) { return x.id === velho.id; }); if (no) { no.nome = nome; no.carga = 0; marcarEdicao(); } }
+        s.aviso = velho.nome + ' trocado por ' + nome + (c.perm ? ' (também nas próximas vezes).' : ' só hoje.');
+      }
+      s.atual = alvo;
+      ui.confirm = null; renderOverlay(); voltarDialogo();
+      salvar(); render(); rolarPara('exg-' + alvo);
     },
     definirProximo: function (id) {
       var p = ativo();
@@ -902,7 +946,7 @@
       if (ui.picker && GRUPOS.some(function (gr) { return gr.g === g0; })) ui.grupo = g0;
       render();
     },
-    grupo: function (g) { ui.grupo = g; ui.busca = ''; render(); },
+    grupo: function (g) { ui.grupo = g; ui.busca = ''; if (ui.confirm && ui.confirm.tipo === 'exSessao') renderOverlay(); else render(); },
     addEx: function (nome) {
       treinoEd().exs.push({ id: uid('e'), nome: nome || 'Novo exercício', series: 3, reps: 12, carga: 0 });
       marcarEdicao(); salvar();
@@ -941,6 +985,7 @@
       setTimeout(function () { A.entrar(); }, 400);
     },
     revincular: function () { if (sync.usuario) iniciarVinculo(); },
+    tentarDeNovo: function () { if (!sync.usuario) return; sync.negado = false; sync.erroDetalhe = null; if (sync.vinculado) { comecarEscuta(); render(); } else iniciarVinculo(); },
     fechar: function () { fecharConfirm(false); },
     confirmar: function (arg) { confirmar(arg); }
   };
@@ -965,7 +1010,8 @@
   function avisoNegado() {
     if (!sync.negado || !sync.usuario) return '';
     return '<section class="notice erro" role="alert"><strong>Sem permissão para acessar a nuvem</strong><span class="small">Você entrou como <b>' + esc(sync.usuario.email || '?') + '</b>' + (sync.usuario.verificado ? '' : ' (e-mail não verificado)') + '. Esta conta não tem acesso aos dados do Diário de Treino. Os dados deste aparelho continuam salvos aqui.</span>' +
-      '<button type="button" class="btn sm" data-act="trocarConta">Sair e entrar com outra conta</button></section>';
+      '<span class="small muted">Detalhe técnico: ' + esc((sync.erroDetalhe && sync.erroDetalhe.codigo) || 'permission-denied') + ' ao ' + esc((sync.erroDetalhe && sync.erroDetalhe.onde) || 'acessar') + ' apps/treino/users/' + esc(sync.usuario.uid) + '</span>' +
+      '<div class="row-actions"><button type="button" class="btn sm" data-act="tentarDeNovo">Tentar de novo</button><button type="button" class="btn sm" data-act="trocarConta">Sair e entrar com outra conta</button></div></section>';
   }
   function tags(t) {
     var gs = [];
@@ -1071,11 +1117,11 @@
   function vSessao() {
     var s = D.sessao, t = acharTreino(s.treinoId), feitos = s.feitos.filter(Boolean).length, okTot = 0;
     s.sets.forEach(function (a, i) { okTot += seriesOk(i); });
-    var sug = sugeridoIdx(), pct = t.exs.length ? Math.round(feitos / t.exs.length * 100) : 0;
+    var exs = s.exs, sug = sugeridoIdx(), pct = exs.length ? Math.round(feitos / exs.length * 100) : 0;
     var aviso = s.aviso ? '<div class="toast" role="status">' + icon('check', 18) + '<span>' + esc(s.aviso) + '</span></div>' : '';
     if (s.aviso) { s.aviso = ''; gravarLocal(); }
     var itens = s.ordem.map(function (i, pos) {
-      var ex = t.exs[i], ok = seriesOk(i), sets = s.sets[i] || [], feito = s.feitos[i], aberta = s.atual === i, ref = refEx(ex.nome);
+      var ex = exs[i], ok = seriesOk(i), sets = s.sets[i] || [], feito = s.feitos[i], aberta = s.atual === i, ref = refEx(ex.nome);
       var est = feito ? 'done' : ok ? 'half' : 'circle';
       var status = feito ? 'Feito' : ok ? ok + '/' + sets.length : i === sug ? 'A seguir' : '';
       var corpo = '';
@@ -1097,6 +1143,8 @@
           '<div class="set-grid set-labels" aria-hidden="true"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>' + linhas +
           '<button type="button" class="link plain add" data-act="addSet" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar série</button>' +
           '<span class="small muted">Campo vazio usa o valor em cinza ao marcar a série.</span>' +
+          (ex.trocadoDe ? '<span class="small muted">Hoje no lugar de ' + esc(ex.trocadoDe) + '.</span>' : '') +
+          '<div class="row-actions exg-acoes"><button type="button" class="btn sm" data-act="sessTrocar" data-arg="' + i + '">' + icon('swap', 16) + 'Trocar exercício</button><button type="button" class="btn sm ghost" data-act="sessRemover" data-arg="' + i + '">' + icon('trash', 16) + 'Remover</button></div>' +
           '<button type="button" class="btn primary block" data-act="concluirEx"' + (ok ? '' : ' disabled') + '>' + (feito ? 'Salvar e fechar' : 'Concluir exercício') + '</button></div>';
       }
       return '<section class="ex-gaveta' + (aberta ? ' aberta' : '') + (feito ? ' feito' : '') + (i === sug && !aberta ? ' sug' : '') + '" id="exg-' + i + '">' +
@@ -1109,8 +1157,9 @@
     }).join('');
     return '<div class="sess-head"><div class="sess-row"><button type="button" class="link plain" data-act="cancelar">Cancelar</button><span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></div>' +
       '<div class="sess-title"><div class="badge on" aria-hidden="true">' + esc(t.letra) + '</div><div class="sess-title-txt"><span class="eyebrow">Em andamento' + (sync.vinculado ? ' · na nuvem' : '') + '</span><h1>' + esc(t.nome) + '</h1></div></div>' +
-      '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + t.exs.length + '" aria-valuenow="' + feitos + '" aria-label="Exercícios concluídos"><span style="width:' + pct + '%"></span></div><span class="small soft nowrap">' + feitos + ' de ' + t.exs.length + ' exercícios</span></div></div>' +
-      '<div class="sess-list">' + aviso + '<p class="small muted">Toque num exercício para abrir. Use as setas para mudar a ordem se um aparelho estiver ocupado.</p>' + itens + '</div>' +
+      '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + exs.length + '" aria-valuenow="' + feitos + '" aria-label="Exercícios concluídos"><span style="width:' + pct + '%"></span></div><span class="small soft nowrap">' + feitos + ' de ' + exs.length + ' exercícios</span></div></div>' +
+      '<div class="sess-list">' + aviso + '<p class="small muted">Toque num exercício para abrir. Use as setas para mudar a ordem; dá para trocar, remover ou adicionar exercícios só para hoje.</p>' + itens +
+      '<button type="button" class="btn outline block" data-act="sessAdicionar">' + icon('plus', 18) + 'Adicionar exercício</button></div>' +
       '<div class="sess-foot"><div class="sess-foot-inner">' + (okTot ? '' : '<span class="hint">Registre ao menos uma série para salvar.</span>') +
       '<button type="button" class="btn primary block xl" data-act="finalizar"' + (okTot ? '' : ' disabled') + '>' + icon('check', 18) + 'Concluir sessão</button></div></div>';
   }
@@ -1133,11 +1182,6 @@
         '</div></div>';
     }).join('');
     var noTreino = te.exs.map(function (x) { return x.nome; });
-    var abas = GRUPOS.map(function (gr) { return '<button type="button" class="chip sm-chip" aria-pressed="' + (ui.grupo === gr.g) + '" data-act="grupo" data-arg="' + esc(gr.g) + '">' + esc(gr.g) + '</button>'; }).join('');
-    var lib = GRUPOS.map(function (gr) {
-      return '<div class="lib-grupo" data-grupo="' + esc(gr.g) + '"' + (ui.grupo === gr.g ? '' : ' hidden') + '><span class="lib-g">' + esc(gr.g) + '</span><div class="chips">' +
-        gr.ex.map(function (n) { var ja = noTreino.indexOf(n) >= 0; return '<button type="button" class="chip square' + (ja ? ' ja' : '') + '" data-busca="' + esc(semAcento(n + ' ' + gr.g)) + '" data-act="addEx" data-arg="' + esc(n) + '"' + (ja ? ' aria-label="' + esc(n) + ', já está no treino. Adicionar de novo"' : '') + '>' + (ja ? icon('check', 14) : '') + esc(n) + '</button>'; }).join('') + '</div></div>';
-    }).join('');
     return '<button type="button" class="link plain back" data-act="editor" data-arg="0">' + icon('back', 18) + 'Treinos</button>' +
       cabecalho('Editar treinos', 'Divisões, exercícios, séries e cargas.') +
       '<section class="section"><h2 class="section-title">Divisões</h2><div class="chips">' + chips + '<button type="button" class="chip dashed" data-act="novaDivisao">' + icon('plus', 16) + 'Nova divisão</button></div>' +
@@ -1148,11 +1192,21 @@
       '<section class="card flat" style="gap:14px" aria-label="Editar treino ' + esc(te.letra) + '"><div class="field"><label for="foco-treino">Treino ' + esc(te.letra) + ' · foco</label><input id="foco-treino" class="input title" type="text" value="' + esc(te.nome) + '" data-bind="treinoNome" enterkeyhint="done"></div>' +
       (exs || '<p class="muted">Nenhum exercício neste treino ainda.</p>') +
       '<button type="button" class="btn outline block" aria-expanded="' + ui.picker + '" data-act="picker">' + icon('plus', 18) + 'Adicionar exercício</button>' +
-      (ui.picker ? '<div class="picker"><div class="busca">' + icon('search', 18) + '<input id="busca-ex" class="input" type="search" placeholder="Buscar exercício" aria-label="Buscar exercício" value="' + esc(ui.busca) + '" enterkeyhint="search"></div>' +
-        '<div class="chips grupos" role="group" aria-label="Grupamento muscular">' + abas + '</div><div id="lib">' + lib + '<p class="small muted" id="lib-vazio" hidden>Nenhum exercício encontrado. Use "Outro (personalizado)".</p></div>' +
-        '<span class="small soft" id="flash" role="status">' + esc(ui.flash || '') + '</span>' +
+      (ui.picker ? '<div class="picker">' + libHtml('addEx', noTreino) +
         '<div class="row-actions"><button type="button" class="chip square dashed" data-act="addEx" data-arg="">Outro (personalizado)</button><button type="button" class="btn sm" data-act="picker">Fechar lista</button></div></div>' : '') +
       (ed.treinos.length > 1 ? '<button type="button" class="link" data-act="removerTreino">Excluir treino ' + esc(te.letra) + '</button>' : '') + '</section>';
+  }
+
+  /* Biblioteca de exercícios por grupamento, com busca. act = ação ao tocar num exercício. */
+  function libHtml(act, jaNaLista) {
+    var abas = GRUPOS.map(function (gr) { return '<button type="button" class="chip sm-chip" aria-pressed="' + (ui.grupo === gr.g) + '" data-act="grupo" data-arg="' + esc(gr.g) + '">' + esc(gr.g) + '</button>'; }).join('');
+    var lib = GRUPOS.map(function (gr) {
+      return '<div class="lib-grupo" data-grupo="' + esc(gr.g) + '"' + (ui.grupo === gr.g ? '' : ' hidden') + '><span class="lib-g">' + esc(gr.g) + '</span><div class="chips">' +
+        gr.ex.map(function (n) { var ja = jaNaLista.indexOf(n) >= 0; return '<button type="button" class="chip square' + (ja ? ' ja' : '') + '" data-busca="' + esc(semAcento(n + ' ' + gr.g)) + '" data-act="' + act + '" data-arg="' + esc(n) + '"' + (ja ? ' aria-label="' + esc(n) + ', já está na lista"' : '') + '>' + (ja ? icon('check', 14) : '') + esc(n) + '</button>'; }).join('') + '</div></div>';
+    }).join('');
+    return '<div class="busca">' + icon('search', 18) + '<input id="busca-ex" class="input" type="search" placeholder="Buscar exercício" aria-label="Buscar exercício" value="' + esc(ui.busca) + '" enterkeyhint="search" autocomplete="off"></div>' +
+      '<div class="chips grupos" role="group" aria-label="Grupamento muscular">' + abas + '</div><div id="lib">' + lib + '<p class="small muted" id="lib-vazio" hidden>Nenhum exercício encontrado.</p></div>' +
+      '<span class="small soft" id="flash" role="status">' + esc(ui.flash || '') + '</span>';
   }
 
   /* --- Evolução --- */
@@ -1352,6 +1406,21 @@
     var corpo;
     if (c.tipo === 'pesagem') corpo = dlgPesagem(c.dados || {});
     else if (c.tipo === 'balanca') corpo = dlgBalanca();
+    else if (c.tipo === 'exSessao') {
+      var tS = acharTreino(D.sessao.treinoId), exT = c.modo === 'trocar' ? D.sessao.exs[c.idx] : null;
+      corpo = '<h2 id="dlg-t">' + (c.modo === 'add' ? 'Adicionar exercício' : 'Trocar ' + esc(exT.nome)) + '</h2>' +
+        '<p id="dlg-d">' + (c.modo === 'add' ? 'Entra no fim da lista de hoje.' : 'O substituto fica no mesmo lugar, com as mesmas séries e repetições.' + (seriesOk(c.idx) ? ' As séries já marcadas deste exercício serão descartadas.' : '')) + '</p>' +
+        '<label class="toggle"><input type="checkbox" data-act="exPerm"' + (c.perm ? ' checked' : '') + '> ' + (c.modo === 'add' ? 'Incluir também no treino ' : 'Trocar também no treino ') + esc(tS ? tS.letra : '') + ' (próximas vezes)</label>' +
+        libHtml('escolherEx', D.sessao.exs.map(function (x) { return x.nome; })) +
+        '<div class="field tight"><label for="ex-custom">Ou digite outro exercício</label><div class="linha-input"><input id="ex-custom" class="input" type="text" autocomplete="off" placeholder="ex.: Supino na Smith" enterkeyhint="done"><button type="button" class="btn sm" data-act="escolherEx" data-arg="">Usar</button></div></div>' +
+        '<div class="acts"><button type="button" class="btn" data-act="fechar">Cancelar</button></div>';
+    }
+    else if (c.tipo === 'sessRemover') {
+      var exR = D.sessao.exs[c.alvo], tR = acharTreino(D.sessao.treinoId);
+      corpo = '<h2 id="dlg-t">Remover ' + esc(exR.nome) + '?</h2><p id="dlg-d">Sai do treino de hoje' + (seriesOk(c.alvo) ? ', junto com as ' + plural(seriesOk(c.alvo), 'série marcada', 'séries marcadas') : '') + '. Os registros antigos continuam no histórico.</p>' +
+        '<label class="toggle"><input type="checkbox" data-act="exPerm"' + (c.perm ? ' checked' : '') + '> Remover também do treino ' + esc(tR ? tR.letra : '') + ' (próximas vezes)</label>' +
+        '<div class="acts"><button type="button" class="btn" data-act="fechar">Manter</button><button type="button" class="btn danger" data-act="confirmar">Remover</button></div>';
+    }
     else if (c.tipo === 'trocar') corpo = '<h2 id="dlg-t">Trocar o próximo treino</h2><p id="dlg-d">Escolha com qual treino seguir. Depois de treinar, o rodízio continua a partir dele.</p>' + letrasProximo(ativo(), proximoTreino(ativo())) +
       '<div class="acts"><button type="button" class="btn" data-act="fechar">Fechar</button></div>';
     else if (c.tipo === 'migrarConflito') corpo = '<h2 id="dlg-t">Há dados neste aparelho e na nuvem</h2><p id="dlg-d">Aparelho: ' + plural(c.nl, 'treino', 'treinos') + ', ' + plural(c.pl, 'pesagem', 'pesagens') + '. Nuvem: ' + plural(c.nr, 'treino', 'treinos') + ', ' + plural(c.pr, 'pesagem', 'pesagens') + '. Antes de qualquer opção, um backup deste aparelho será baixado.</p>' +
@@ -1372,9 +1441,10 @@
       }[c.tipo];
       corpo = '<h2 id="dlg-t">' + esc(txt[0]) + '</h2><p id="dlg-d">' + esc(txt[1]) + '</p><div class="acts"><button type="button" class="btn" data-act="fechar">' + esc(txt[3]) + '</button><button type="button" class="btn ' + (txt[4] ? 'danger' : 'primary') + '" data-act="confirmar">' + esc(txt[2]) + '</button></div>';
     }
-    $overlay.innerHTML = '<div class="overlay" data-fundo="1"><div class="sheet' + (c.tipo === 'pesagem' || c.tipo === 'balanca' ? ' alta' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlg-t">' + corpo + '</div></div>';
+    $overlay.innerHTML = '<div class="overlay" data-fundo="1"><div class="sheet' + (c.tipo === 'pesagem' || c.tipo === 'balanca' || c.tipo === 'exSessao' ? ' alta' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlg-t">' + corpo + '</div></div>';
+    if (c.tipo === 'exSessao') aplicarBusca();
     var alvo = $overlay.querySelector('[autofocus]') || $overlay.querySelector('[data-act="fechar"]') || $overlay.querySelector('button');
-    if (alvo && c.tipo !== 'pesagem') alvo.focus();
+    if (alvo && c.tipo !== 'pesagem' && c.tipo !== 'exSessao') alvo.focus();
   }
   function campo(id, rot, val, extra) {
     return '<div class="field tight"><label for="' + id + '">' + rot + '</label><input id="' + id + '" class="input" type="text" inputmode="decimal" autocomplete="off" value="' + (val == null ? '' : esc(virgula(val))) + '"' + (extra || '') + '></div>';
@@ -1438,10 +1508,10 @@
   function aplicarBusca() {
     var lib = document.getElementById('lib');
     if (!lib) return;
-    var q = semAcento(ui.busca).trim(), algum = false;
+    var q = semAcento(ui.busca).trim(), algum = false, palavras = q.split(/\s+/).filter(Boolean); // cada palavra precisa aparecer, em qualquer ordem
     lib.querySelectorAll('.lib-grupo').forEach(function (sec) {
       var vis = 0;
-      sec.querySelectorAll('[data-busca]').forEach(function (b) { var ok = !q || b.getAttribute('data-busca').indexOf(q) >= 0; b.hidden = !ok; if (ok) vis++; });
+      sec.querySelectorAll('[data-busca]').forEach(function (b) { var t = b.getAttribute('data-busca'); var ok = !q || palavras.every(function (p) { return t.indexOf(p) >= 0; }); b.hidden = !ok; if (ok) vis++; });
       sec.hidden = q ? vis === 0 : sec.getAttribute('data-grupo') !== ui.grupo;
       if (!sec.hidden) algum = true;
     });
@@ -1499,6 +1569,7 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && ui.confirm) { fecharConfirm(false); return; }
     if (e.key === 'Enter' && ui.confirm && ui.confirm.tipo === 'pesagem' && e.target.tagName === 'INPUT') { e.preventDefault(); salvarPesagem(); return; }
+    if (e.key === 'Enter' && e.target.id === 'ex-custom') { e.preventDefault(); A.escolherEx(''); return; }
     if (e.key === 'Enter' && e.target.matches && e.target.matches('#view input[type="text"]')) e.target.blur();
   });
 

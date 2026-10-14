@@ -495,3 +495,11 @@ textarea.input { height: auto; padding: 10px; font-size: 13px; font-weight: 500;
   .timer { margin-right: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+.exg-acoes { margin-top: 2px; }
+.exg-acoes .btn { flex: 1 1 140px; }
+.linha-input { display: flex; gap: 8px; }
+.linha-input .input { flex: 1; }
+.sheet .busca .input { background: var(--bg); }
+.sheet #lib { max-height: 38dvh; overflow-y: auto; padding-right: 2px; }
+.sheet .grupos { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.sheet .grupos .chip { flex: none; }
