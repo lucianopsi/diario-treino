@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101214">
-<meta name="color-scheme" content="dark">
-<meta name="description" content="Monte sua divisão de treino e registre séries, cargas e evolução.">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Monte sua divisão de treino, registre séries e cargas, acompanhe evolução e pesagens.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,8 +19,10 @@
 <script>
   /* aplica o tema salvo antes de desenhar a tela, sem piscar */
   try {
-    var d = JSON.parse(localStorage.getItem('diario-treino-v1') || 'null');
-    if (d && d.tema === 'claro') {
+    var temaSalvo = localStorage.getItem('diario-treino-tema');
+    if (!temaSalvo) { var dv = JSON.parse(localStorage.getItem('diario-treino-v1') || 'null'); temaSalvo = dv && dv.tema; }
+    var claro = temaSalvo === 'claro' || (temaSalvo === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+    if (claro) {
       document.documentElement.setAttribute('data-tema', 'claro');
       document.querySelector('meta[name="theme-color"]').setAttribute('content', '#FFFFFF');
     }
@@ -28,13 +30,17 @@
 </script>
 </head>
 <body>
-<div class="shell">
+<div class="shell com-nav">
   <nav id="nav" class="tabbar" aria-label="Navegação principal"></nav>
   <main id="view" class="view" tabindex="-1"></main>
 </div>
+<div id="sync" class="sync-chip" role="status" hidden></div>
 <div id="overlay"></div>
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 <noscript><p class="noscript">Ative o JavaScript para usar o Diário de Treino.</p></noscript>
-<script src="app.js"></script>
+<script src="graficos.js" defer></script>
+<script src="balanca.js" defer></script>
+<script src="app.js" defer></script>
+<script type="module" src="nuvem.js"></script>
 </body>
 </html>

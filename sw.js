@@ -1,10 +1,15 @@
-/* Service worker: guarda o app no aparelho para funcionar sem internet. */
-const VERSAO = 'treino-v1.2.0';
+/* Service worker: guarda o app no aparelho para funcionar sem internet.
+   Ao publicar uma versão nova, aumente VERSAO para o celular baixar os arquivos novos. */
+const VERSAO = 'treino-v2.0.0';
 const ARQUIVOS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './graficos.js',
+  './balanca.js',
+  './nuvem.js',
+  './firebase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -18,9 +23,19 @@ const ARQUIVOS = [
   './fonts/barlow-condensed-latin-600-normal.woff2',
   './fonts/barlow-condensed-latin-700-normal.woff2'
 ];
+// SDK do Firebase (versão fixa): guardado para o app abrir sem internet já logado.
+const FIREBASE = [
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(ARQUIVOS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(VERSAO)
+      .then((c) => c.addAll(ARQUIVOS).then(() => Promise.all(FIREBASE.map((u) => c.add(new Request(u, { mode: 'cors' })).catch(() => {})))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -33,27 +48,22 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  // Página: tenta a rede primeiro (pega atualizações), cai para o cache sem internet.
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  const mesmaOrigem = url.origin === self.location.origin;
+  const sdkFirebase = url.origin === 'https://www.gstatic.com' && url.pathname.startsWith('/firebasejs/');
+  if (!mesmaOrigem && !sdkFirebase) return; // Firestore, login etc. passam direto pela rede
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)
-        .then((res) => {
-          const copia = res.clone();
-          caches.open(VERSAO).then((c) => c.put('./index.html', copia));
-          return res;
-        })
+        .then((res) => { const copia = res.clone(); caches.open(VERSAO).then((c) => c.put('./index.html', copia)); return res; })
         .catch(() => caches.match('./index.html'))
     );
     return;
   }
-  // Demais arquivos: cache primeiro.
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      if (res.ok) {
-        const copia = res.clone();
-        caches.open(VERSAO).then((c) => c.put(req, copia));
-      }
+      if (res.ok) { const copia = res.clone(); caches.open(VERSAO).then((c) => c.put(req, copia)); }
       return res;
     }))
   );

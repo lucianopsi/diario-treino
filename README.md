@@ -14,9 +14,16 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 4. **Concluir exercício** volta para a lista com o próximo sugerido. **Finalizar** salva o treino.
 
 ## Onde ficam os dados
-- Tudo fica **somente no aparelho** (armazenamento do navegador). Nada é enviado para servidor.
-- Use **Montar › Dados e backup** para enviar o backup ao Google Drive (ou baixar o arquivo) e para importá-lo em outro aparelho.
-- Limpar os dados do Chrome ou desinstalar o app apaga o histórico: mantenha o backup em dia.
+- Sempre há uma cópia no aparelho (`localStorage`, chave `diario-treino-v1`). A versão 2.0 só acrescenta campos; uma cópia intacta da 1.x fica em `diario-treino-v1-copia-antes-2.0`.
+- Com **Ajustes › Entrar com Google**, tudo é sincronizado no Firestore em `apps/treino/users/{uid}/…`:
+  - `config/main` divisões, treinos e regra da sequência · `config/prefs` tema, gavetas, perfil
+  - `sessions/{id}` um documento por treino (exclusão marca `apagado: true`)
+  - `weights/{id}` pesagens · `live/current` treino em andamento
+- Primeiro login: com dados só no aparelho, o app oferece enviá-los; com dados nos dois lugares, pergunta (juntar sem duplicar / manter a nuvem / substituir pela local). Antes, baixa um backup JSON.
+- **Ajustes › Dados e backup**: exportar e importar backup JSON.
+
+## Balança OKOK (experimental)
+Leitura do peso (e impedância) pelos anúncios Bluetooth da balança, sem parear. Exige no Chrome do Android: `chrome://flags` › *Experimental Web Platform features* › Enabled. Formatos suportados: V20, V11, VF0 e C0 (documentados pelo projeto openScale). Há um modo diagnóstico para capturar os bytes de modelos não reconhecidos.
 
 ## Regras da sequência
 - **Até 2 descansos** (padrão): até 2 dias seguidos sem treino não quebram a sequência; o 3º quebra. Só dias treinados contam.
@@ -25,5 +32,7 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 
 ## Publicar uma atualização
 Ao alterar qualquer arquivo, aumente `VERSAO` em `sw.js` para o celular baixar a nova versão.
+
+O SDK do Firebase vem do CDN oficial (versão fixa 10.12.2) e a configuração está em `firebase-config.js`.
 
 Fontes: Barlow e Barlow Condensed (SIL Open Font License, ver `fonts/OFL.txt`).
