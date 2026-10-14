@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.3.0';
+  var VERSAO_APP = '2.3.1';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -841,9 +841,9 @@
   var A = {
     ir: function (tela) { irPara(tela); },
     gaveta: function (id) {
-      var aberta = estaAberta(id, true);
-      D.gavetas[id] = !aberta; salvar();
       var sec = document.querySelector('[data-gaveta="' + id + '"]');
+      var aberta = sec ? sec.classList.contains('aberta') : estaAberta(id, true); // respeita o padrão de cada gaveta
+      D.gavetas[id] = !aberta; salvar();
       if (sec) { sec.classList.toggle('aberta', !aberta); var b = sec.querySelector('.gaveta-cab'); if (b) b.setAttribute('aria-expanded', String(!aberta)); var corpo = sec.querySelector('.gaveta-corpo'); if (corpo) corpo.hidden = aberta; if (!aberta && window.Graficos) window.Graficos.desenharTodos(sec); }
     },
     iniciar: function (id) {
@@ -995,6 +995,14 @@
       if (nome) { mostrarFlash(nome + ' adicionado ao treino ' + treinoEd().letra + '.'); render(); return; }
       ui.picker = false; render();
       var ins = document.querySelectorAll('[data-bind^="exNome:"]'), el = ins[ins.length - 1]; if (el) { el.focus(); el.select(); }
+    },
+    corpoTodas: function () { D.perfil.corpoTodas = !D.perfil.corpoTodas; salvar(); render(); },
+    padraoMedida: function (id) {
+      var m = D.pesagens.find(function (x) { return x.id === id; }); if (!m) return;
+      var auto = (function () { var h = +m.data.slice(11, 13); return h < JANELA.ini || h >= JANELA.fim; })();
+      var foraAgora = foraDoPadrao(m);
+      if (foraAgora === auto) m.padraoManual = foraAgora ? 'dentro' : 'fora'; else delete m.padraoManual; // volta ao automático quando coincide
+      salvar(); render();
     },
     lembreteHoje: function () { D.perfil.lembreteAdiado = diaKey(new Date()); salvar(); render(); },
     lembreteDias: function (n) { D.perfil.lembreteDias = +n; salvar(); render(); },
@@ -1356,11 +1364,22 @@
 
   /* --- Corpo: composição corporal medida pelo Galaxy Watch (importada do Samsung Health) --- */
   function medidasRelogio() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem === 'samsung'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
+  /* padrão de medição: de manhã, entre 5h e 10h (em jejum, antes de comer e treinar).
+     Fora disso, água e comida distorcem a bioimpedância. Dá para corrigir medição a medição. */
+  var JANELA = { ini: 5, fim: 10 };
+  function foraDoPadrao(m) {
+    if (m.padraoManual === 'dentro') return false;
+    if (m.padraoManual === 'fora') return true;
+    var h = +m.data.slice(11, 13);
+    return h < JANELA.ini || h >= JANELA.fim;
+  }
+  function verTodas() { return !!D.perfil.corpoTodas; }
   function pesagensAntigas() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem !== 'samsung'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
   /* um ponto por dia: média das medições do dia (duas medições seguidas costumam variar 1–3 p.p.) */
   function diasCorpo() {
     var por = {}, ordem = [];
     medidasRelogio().forEach(function (m) {
+      if (!verTodas() && foraDoPadrao(m)) return;
       var k = m.data.slice(0, 10);
       if (!por[k]) { por[k] = { n: 0, s: {}, c: {}, altura: null }; ordem.push(k); }
       var d = por[k]; d.n++;
@@ -1404,9 +1423,13 @@
     if (p.origem === 'samsung') extras = MEDIDAS.filter(function (md) { return md.k !== 'peso' && md.k !== 'imc' && p[md.k] != null; }).map(function (md) { return '<div><span class="muted small">' + esc(md.nome) + '</span><b>' + kg(p[md.k], md.casas) + esc(md.un) + '</b></div>'; }).join('');
     else extras = [['gordura', 'Gordura', '%'], ['musculo', 'Massa muscular', ' kg'], ['agua', 'Água', '%']].filter(function (x) { return p[x[0]] != null; }).map(function (x) { return '<div><span class="muted small">' + x[1] + '</span><b>' + kg(p[x[0]], 1) + x[2] + '</b></div>'; }).join('');
     var resumo = kg(p.peso, 1) + ' kg' + (p.gordura != null ? ' · ' + kg(p.gordura, 1) + '%' : p.origem === 'samsung' ? ' · só peso' : '');
-    return '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirPeso" data-arg="' + esc(p.id) + '"><span class="mini peso" aria-hidden="true">' + icon('body', 18) + '</span><span class="mid"><b>' + esc(resumo) + '</b><span class="small muted">' + (p.origem === 'samsung' ? 'Galaxy Watch' : p.origem === 'balanca' ? 'Balança (Bluetooth)' : 'Manual') + '</span></span>' +
+    var fora = p.origem === 'samsung' && foraDoPadrao(p);
+    return '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirPeso" data-arg="' + esc(p.id) + '"><span class="mini peso" aria-hidden="true">' + icon('body', 18) + '</span><span class="mid"><b>' + esc(resumo) + '</b><span class="small muted">' + (p.origem === 'samsung' ? 'Galaxy Watch' : p.origem === 'balanca' ? 'Balança (Bluetooth)' : 'Manual') + (fora ? ' · <span class="tag-fora">fora do padrão</span>' : '') + '</span></span>' +
       '<span class="dt">' + dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
-      (aberto ? '<div class="sess-det">' + (extras ? '<div class="stats3 compact">' + extras + '</div>' : '') + '<button type="button" class="link" data-act="excluirPeso" data-arg="' + esc(p.id) + '">Excluir este registro</button></div>' : '') + '</article>';
+      (aberto ? '<div class="sess-det">' + (extras ? '<div class="stats3 compact">' + extras + '</div>' : '') +
+        (p.origem === 'samsung' ? '<span class="small muted">' + (fora ? 'Fora do padrão' + (p.padraoManual ? ' (marcada por você)' : ' (feita fora das ' + JANELA.ini + 'h–' + JANELA.fim + 'h)') + ': não entra nas barras nem nos gráficos.' : 'Dentro do padrão' + (p.padraoManual ? ' (marcada por você)' : '') + '.') + '</span>' +
+          '<div class="row-actions"><button type="button" class="btn sm" data-act="padraoMedida" data-arg="' + esc(p.id) + '">' + (fora ? 'Considerar dentro do padrão' : 'Marcar como fora do padrão') + '</button></div>' : '') +
+        '<button type="button" class="link" data-act="excluirPeso" data-arg="' + esc(p.id) + '">Excluir este registro</button></div>' : '') + '</article>';
   }
   function gavetaAntigas() {
     var antigas = pesagensAntigas();
@@ -1417,7 +1440,14 @@
   function vCorpo() {
     var html = cabecalho('Corpo', 'Composição corporal medida pelo Galaxy Watch.') + toastHtml() + avisoRelogio(true);
     var serie = diasCorpo(), medidas = medidasRelogio();
+    var nFora = medidas.filter(foraDoPadrao).length;
+    var avisoFora = nFora ? '<div class="cb-fora"><span class="small">' + (verTodas() ? 'Mostrando todas as medições, inclusive ' + plural(nFora, 'fora do padrão', 'fora do padrão') + '.' : plural(nFora, 'medição feita fora do padrão (antes das ' + JANELA.ini + 'h ou depois das ' + JANELA.fim + 'h) ficou', 'medições feitas fora do padrão (antes das ' + JANELA.ini + 'h ou depois das ' + JANELA.fim + 'h) ficaram') + ' fora das barras e dos gráficos.') + '</span>' +
+      '<button type="button" class="btn sm ghost" aria-pressed="' + verTodas() + '" data-act="corpoTodas">' + (verTodas() ? 'Só as do padrão' : 'Mostrar todas') + '</button></div>' : '';
     var importar = '<button type="button" class="btn sm outline" data-act="importarRelogio">' + icon('upload', 16) + 'Importar</button>';
+    if (!serie.length && medidas.length) {
+      return html + '<section class="vazio card flat"><strong>Nenhuma medição dentro do padrão</strong><span class="small muted">Todas as medições foram feitas fora da janela da manhã (' + JANELA.ini + 'h–' + JANELA.fim + 'h).</span>' + avisoFora + '</section>' +
+        gaveta('medicoes', 'Medições do relógio', plural(medidas.length, 'registro', 'registros'), '<div class="section">' + medidas.slice().reverse().map(itemPesagem).join('') + '</div>', false) + gavetaAntigas();
+    }
     if (!serie.length) {
       return html + '<section class="vazio card flat"><strong>Nenhuma medição do relógio ainda</strong><span class="small muted">No relógio, abra Composição corporal, informe o peso da balança e faça a medição. Depois exporte no Samsung Health (menu › Configurações › Baixar dados pessoais) e importe aqui: vêm todas as medições já feitas.</span>' +
         '<button type="button" class="btn primary" data-act="importarRelogio">' + icon('upload', 18) + 'Importar do Samsung Health</button></section>' + gavetaAntigas();
@@ -1428,7 +1458,7 @@
       (ref.n > 1 ? '<span class="small muted">média de ' + ref.n + ' medições do dia</span>' : '') + '</div>' + importar + '</div>';
     var bars = MEDIDAS.map(function (md) { var s2 = md.k === 'peso' ? serie : comBia; return s2.length ? barraCorpo(md, s2) : ''; }).join('');
     var legenda = '<div class="legenda small"><span><i class="lg cb-l-atual"></i>Atual</span><span><i class="lg cb-l-sombra"></i>Medição anterior</span></div>';
-    var secAtual = '<section class="section card flat" aria-labelledby="cb-t"><h2 class="section-title" id="cb-t">Composição corporal</h2>' + cab + '<div class="cb-lista">' + bars + '</div>' + legenda + '</section>';
+    var secAtual = '<section class="section card flat" aria-labelledby="cb-t"><h2 class="section-title" id="cb-t">Composição corporal</h2>' + cab + '<div class="cb-lista">' + bars + '</div>' + legenda + avisoFora + '</section>';
 
     var desde = ui.corpoPeriodo ? diaKey(new Date(Date.now() - ui.corpoPeriodo * 86400000)) : '';
     var noPer = serie.filter(function (d) { return d.dia >= desde; });
@@ -1452,7 +1482,7 @@
     }).join('');
     var secEvo = '<section class="section card flat" aria-labelledby="ce-t"><h2 class="section-title" id="ce-t">Evolução</h2><div class="segmented quatro" role="group" aria-label="Período">' + per + '</div>' +
       '<div class="stats3">' + trio.map(mudanca).join('') + '</div>' + graficos +
-      '<span class="small muted">Para a comparação valer, meça sempre nas mesmas condições: de manhã, em jejum, depois de ir ao banheiro e antes de treinar. A bioimpedância erra de 3 a 5 p.p. no valor absoluto; o que importa é a tendência.</span></section>';
+      '<span class="small muted">Para a comparação valer, meça sempre nas mesmas condições: de manhã (entre ' + JANELA.ini + 'h e ' + JANELA.fim + 'h), em jejum, depois de ir ao banheiro e antes de treinar. A bioimpedância erra de 3 a 5 p.p. no valor absoluto; o que importa é a tendência.</span></section>';
     var lista = gaveta('medicoes', 'Medições do relógio', plural(medidas.length, 'registro', 'registros'), '<div class="section">' + medidas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
     return html + secAtual + secEvo + lista + gavetaAntigas();
   }
