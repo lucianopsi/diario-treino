@@ -527,3 +527,23 @@ textarea.input { height: auto; padding: 10px; font-size: 13px; font-weight: 500;
 .rel-achado.fraco { border-left-color: var(--line-3); }
 .rel-achado.fraco p { color: var(--muted); }
 .rel-rodape { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- v2.3: composição corporal (Galaxy Watch) e lembrete ---------- */
+.cb-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.cb-cab > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cb-cab b { font-family: var(--display); font-size: 22px; line-height: 1.15; }
+.cb-lista { display: flex; flex-direction: column; gap: 14px; }
+.cb-linha { display: flex; flex-direction: column; gap: 5px; }
+.cb-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cb-top span { font-size: 15px; color: var(--text-2); }
+.cb-top b { font-family: var(--display); font-size: 21px; white-space: nowrap; }
+.cb-barra { position: relative; height: 14px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.cb-barra span { position: absolute; left: 0; border-radius: 999px; }
+.cb-sombra { top: 0; bottom: 0; background: var(--text); opacity: 0.22; }
+.cb-atual { top: 3px; bottom: 3px; background: var(--accent); }
+.cb-dif { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); }
+.cb-dif.sobe, .cb-dif.desce { color: var(--text-2); font-weight: 600; }
+.lg.cb-l-atual { background: var(--accent); }
+.lg.cb-l-sombra { background: var(--text); opacity: 0.22; }
+.lembrete-rel { border-style: solid; border-color: var(--accent); }
+.lembrete-rel .passos { margin: 0; padding-left: 20px; }

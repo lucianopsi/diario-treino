@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.2.0';
+  var VERSAO_APP = '2.3.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -46,14 +46,16 @@
     return 'Outros';
   }
   var MEDALHAS = [{ n: 3, nome: 'Largada' }, { n: 5, nome: 'Ritmo' }, { n: 7, nome: 'Semana cheia' }, { n: 12, nome: 'Imparável' }, { n: 20, nome: 'Lenda do mês' }];
-  var METRICAS = [
-    { k: 'peso', nome: 'Peso', un: 'kg', casas: 1 },
-    { k: 'gordura', nome: 'Gordura', un: '%', casas: 1 },
-    { k: 'musculo', nome: 'Massa muscular', un: 'kg', casas: 1 },
-    { k: 'agua', nome: 'Água', un: '%', casas: 1 },
-    { k: 'visceral', nome: 'Gordura visceral', un: '', casas: 0 },
-    { k: 'ossea', nome: 'Massa óssea', un: 'kg', casas: 1 },
-    { k: 'tmb', nome: 'Metabolismo basal', un: 'kcal', casas: 0 }
+  /* composição corporal do Galaxy Watch, na ordem da tela do Samsung Health */
+  var MEDIDAS = [
+    { k: 'peso', nome: 'Peso', un: ' kg', casas: 1 },
+    { k: 'musculoEsq', nome: 'Massa muscular esquelética', un: ' kg', casas: 1 },
+    { k: 'gordura', nome: 'Gordura corporal', un: '%', casas: 1, pp: true },
+    { k: 'gorduraKg', nome: 'Massa de gordura', un: ' kg', casas: 1 },
+    { k: 'massaMagra', nome: 'Massa livre de gordura', un: ' kg', casas: 1 },
+    { k: 'aguaKg', nome: 'Água corporal', un: ' L', casas: 1 },
+    { k: 'imc', nome: 'IMC', un: '', casas: 1 },
+    { k: 'tmb', nome: 'Metabolismo basal', un: ' kcal', casas: 0 }
   ];
 
   var $view = document.getElementById('view');
@@ -71,7 +73,7 @@
   var ui = {
     tela: 'inicio', editor: false, editId: null, editTreinoId: null, picker: false, grupo: 'Peito', busca: '', flash: '',
     toast: '', confirm: null, abertoHist: {}, filtroLetra: '', filtroEx: '', evoEx: '', evoModo: 'carga',
-    corpoMetrica: 'peso', corpoPeriodo: 90, abertoPeso: null, balanca: null, relMes: null
+    corpoPeriodo: 0, abertoPeso: null, relMes: null
   };
   var sync = {
     disponivel: false, usuario: null, vinculado: false, negado: false, pendentes: 0, erro: null, parar: null,
@@ -656,7 +658,6 @@
   }
   function fecharConfirm(viaVoltar) {
     var c = ui.confirm;
-    if (c && c.tipo === 'balanca') pararBalanca();
     ui.confirm = null;
     renderOverlay();
     if (!viaVoltar) { voltarDialogo(); }
@@ -669,7 +670,6 @@
   function confirmar(arg) {
     var c = ui.confirm;
     if (!c) return;
-    if (c.tipo === 'pesagem') { salvarPesagem(); return; }
     ui.confirm = null; renderOverlay();
     voltarDialogo();
     if (c.tipo === 'descartar') { D.sessao = null; liberarTela(); }
@@ -729,8 +729,18 @@
         if (!a) { novos++; docs.push(m); }
         else if (chaveSaude(a) !== chaveSaude(m)) { mudados++; docs.push(m); }
       });
+      var pmap = {}; D.pesagens.forEach(function (p) { pmap[p.id] = p; });
+      var medNovas = 0, medMud = 0, medDocs = [];
+      (r.medidas || []).forEach(function (m) {
+        var a = pmap[m.id];
+        if (!a) { medNovas++; medDocs.push(m); return; }
+        if (a.apagado) return; // excluída por você: não volta
+        var mm = Object.assign({}, a, m);
+        if (chaveSaude(a) !== chaveSaude(mm)) { medMud++; medDocs.push(mm); }
+      });
       ui.toast = '';
-      abrirConfirm({ tipo: 'importarSaude', docs: docs, total: r.dias.length, novos: novos, mudados: mudados, ini: r.dias.length ? r.dias[0].dia : null, fim: r.dias.length ? r.dias[r.dias.length - 1].dia : null, achados: r.achados });
+      if (!docs.length && !medDocs.length) { D.perfil.ultimaImportacao = Date.now(); delete D.perfil.lembreteAdiado; salvar(); }
+      abrirConfirm({ tipo: 'importarSaude', docs: docs, medDocs: medDocs, medTotal: (r.medidas || []).length, medNovas: medNovas, medMud: medMud, total: r.dias.length, novos: novos, mudados: mudados, ini: r.dias.length ? r.dias[0].dia : null, fim: r.dias.length ? r.dias[r.dias.length - 1].dia : null, achados: r.achados });
     }).catch(function (e) {
       var c = e && e.message;
       mostrarToast(c === 'nada' ? 'Não encontrei os arquivos do Samsung Health (sleep, vitality_score, exercise…). Escolha o .zip da exportação ou os .csv da pasta.'
@@ -747,8 +757,29 @@
       if (pos[d.id] == null) D.saude.push(d); else D.saude[pos[d.id]] = d;
     });
     D.saude.sort(function (a, b) { return a.dia < b.dia ? -1 : 1; });
+    var pos2 = {};
+    D.pesagens.forEach(function (p, i) { pos2[p.id] = i; });
+    (c.medDocs || []).forEach(function (m) { if (pos2[m.id] == null) D.pesagens.push(m); else D.pesagens[pos2[m.id]] = m; });
+    D.perfil.ultimaImportacao = agora;
+    delete D.perfil.lembreteAdiado;
     ui.relMes = null;
-    mostrarToast('Dados do relógio importados: ' + plural(c.novos, 'dia novo', 'dias novos') + (c.mudados ? ', ' + plural(c.mudados, 'atualizado', 'atualizados') : '') + '. Veja o relatório em Evolução.');
+    mostrarToast('Dados do relógio importados: ' + plural(c.novos, 'dia novo', 'dias novos') + (c.mudados ? ', ' + plural(c.mudados, 'atualizado', 'atualizados') : '') + (c.medNovas || c.medMud ? ' e ' + plural(c.medNovas + c.medMud, 'medição corporal', 'medições corporais') : '') + '.');
+  }
+  /* lembrete: depois de N dias sem importar (padrão 7), aviso no Início e no Corpo */
+  function diasSemImportar() {
+    var t = D.perfil.ultimaImportacao || 0;
+    if (!t) D.saude.forEach(function (d) { if ((d.importadoEm || 0) > t) t = d.importadoEm; });
+    if (!t) return null;
+    return Math.round((deKey(diaKey(new Date())) - deKey(diaKey(new Date(t)))) / 86400000);
+  }
+  function lembreteDias() { var n = D.perfil.lembreteDias; return n === 0 ? 0 : n || 7; }
+  function avisoRelogio(noCorpo) {
+    var n = lembreteDias(), d = diasSemImportar();
+    if (!n || d === null || d < n || D.perfil.lembreteAdiado === diaKey(new Date())) return '';
+    return '<section class="notice lembrete-rel" role="status"><strong>Hora de sincronizar o relógio · ' + plural(d, 'dia', 'dias') + ' sem importar</strong>' +
+      '<ol class="passos small">' + (noCorpo ? '<li>Se for medir, faça a composição corporal no relógio, com o peso da balança.</li>' : '') +
+      '<li>Abra o Samsung Health no celular e deixe o relógio sincronizar.</li><li>Menu › Configurações › Baixar dados pessoais.</li><li>Importe aqui o .zip ou os .csv.</li></ol>' +
+      '<div class="row-actions"><button type="button" class="btn sm primary" data-act="importarRelogio">' + icon('upload', 16) + 'Importar agora</button><button type="button" class="btn sm ghost" data-act="lembreteHoje">Hoje não</button></div></section>';
   }
   function mesesComDados() {
     var ks = {};
@@ -804,92 +835,6 @@
     return '<section class="section card flat rel" aria-labelledby="rel-t">' + topo + tot +
       (sems ? '<div class="rel-sems">' + sems + '</div>' : '<p class="small muted">Nenhuma semana deste mês com dados ainda.</p>') +
       '<h3 class="rel-sub">Leituras do mês</h3>' + achados + rodape + '</section>';
-  }
-
-  /* ---------- pesagens ---------- */
-  function abrirPesagem(dados) {
-    abrirConfirm({ tipo: 'pesagem', dados: dados || { data: agoraLocalISO(), origem: 'manual' } });
-    setTimeout(function () { var el = document.getElementById('pz-peso'); if (el && !el.value) el.focus(); }, 50);
-  }
-  function salvarPesagem() {
-    var c = ui.confirm, base = c.dados || {};
-    function v(id) { var el = document.getElementById(id); return el ? el.value : ''; }
-    var peso = numOuNada(v('pz-peso'));
-    var erroEl = document.getElementById('pz-erro');
-    if (!peso || peso <= 0 || peso > 400) { if (erroEl) { erroEl.textContent = 'Informe o peso em kg (ex.: 78,4).'; erroEl.hidden = false; } var pe = document.getElementById('pz-peso'); if (pe) pe.focus(); return; }
-    var reg = {
-      id: base.id || uid('w'), data: v('pz-data') || agoraLocalISO(), peso: peso,
-      gordura: numOuNada(v('pz-gordura')), musculo: numOuNada(v('pz-musculo')), agua: numOuNada(v('pz-agua')),
-      visceral: numOuNada(v('pz-visceral')), ossea: numOuNada(v('pz-ossea')), tmb: numOuNada(v('pz-tmb')),
-      impedancia: base.impedancia || null, origem: base.origem || 'manual', variante: base.variante || null, nota: v('pz-nota') || ''
-    };
-    var i = D.pesagens.findIndex(function (x) { return x.id === reg.id; });
-    if (i >= 0) { reg.apagado = false; D.pesagens[i] = Object.assign({}, D.pesagens[i], reg); } else D.pesagens.push(reg);
-    ui.confirm = null; renderOverlay();
-    voltarDialogo();
-    salvar();
-    mostrarToast('Pesagem de ' + kg(peso, 1) + ' kg salva.');
-    if (ui.tela !== 'corpo') irPara('corpo'); else render();
-  }
-
-  /* ---------- balança (experimental) ---------- */
-  var balancaParar = null, balancaTimer = null;
-  function abrirBalanca() {
-    var sup = window.Balanca ? window.Balanca.suporte() : { bluetooth: false, anuncios: false };
-    ui.balanca = { etapa: !sup.bluetooth ? 'semBluetooth' : !sup.anuncios ? 'semFlag' : 'inicio', quadros: [], leitura: null, diag: false, msg: '' };
-    abrirConfirm({ tipo: 'balanca' });
-  }
-  function pararBalanca() {
-    clearTimeout(balancaTimer);
-    if (balancaParar) { try { balancaParar(); } catch (e) {} balancaParar = null; }
-  }
-  function procurarBalanca() {
-    var b = ui.balanca;
-    window.Balanca.escolher(b.diag).then(function (device) {
-      b.etapa = 'ouvindo'; b.nome = device.name || 'Balança'; b.quadros = []; b.leitura = null; renderOverlay();
-      return window.Balanca.ouvir(device, function (q) {
-        if (!ui.balanca) return;
-        b.quadros.unshift({ t: new Date().toLocaleTimeString('pt-BR'), rssi: q.rssi, nome: q.nome, bruto: q.bruto, leitura: q.leitura });
-        if (b.quadros.length > 25) b.quadros.pop();
-        var el = document.getElementById('bal-peso');
-        if (el && q.leitura) el.textContent = kg(q.leitura.peso, 1);
-        var n = document.getElementById('bal-n');
-        if (n) n.textContent = plural(b.quadros.length, 'sinal recebido', 'sinais recebidos');
-        if (b.diag) { var lst = document.getElementById('bal-diag'); if (lst) lst.innerHTML = diagHtml(); }
-      }, function (l) {
-        b.leitura = l; b.etapa = 'estavel'; pararBalanca(); renderOverlay();
-        if (navigator.vibrate) navigator.vibrate(120);
-      }).then(function (parar) {
-        balancaParar = parar;
-        balancaTimer = setTimeout(function () {
-          if (b.etapa !== 'ouvindo') return;
-          pararBalanca(); b.etapa = 'erro';
-          b.msg = b.quadros.length ? 'A balança enviou sinais, mas nenhum peso estável foi reconhecido. Ative o modo diagnóstico e me envie o resultado para ajustar ao seu modelo.' : 'Nenhum sinal da balança chegou. Suba na balança para ela acordar e tente de novo, perto do celular.';
-          renderOverlay();
-        }, 90000);
-      });
-    }).catch(function (e) {
-      if (e && e.name === 'NotFoundError') { b.etapa = 'inicio'; b.msg = 'Nenhuma balança foi escolhida.'; }
-      else { b.etapa = 'erro'; b.msg = 'Não foi possível usar o Bluetooth: ' + ((e && e.message) || e) + '.'; }
-      renderOverlay();
-    });
-  }
-  function diagHtml() {
-    var b = ui.balanca;
-    if (!b.quadros.length) return '<li class="muted small">Aguardando sinais…</li>';
-    return b.quadros.map(function (q) {
-      return '<li><span class="small muted">' + esc(q.t) + ' · ' + esc(q.nome || 'sem nome') + ' · RSSI ' + esc(q.rssi) + '</span>' +
-        q.bruto.map(function (r) { return '<code>0x' + ('000' + r.id.toString(16)).slice(-4).toUpperCase() + ' [' + r.tam + '] ' + esc(r.hex) + '</code>'; }).join('') +
-        (q.leitura ? '<span class="small">→ ' + esc(q.leitura.variante) + ': ' + kg(q.leitura.peso, 2) + ' kg' + (q.leitura.impedancia ? ' · ' + kg(q.leitura.impedancia, 1) + ' Ω' : '') + (q.leitura.final ? ' · estável' : '') + '</span>' : '') + '</li>';
-    }).join('');
-  }
-  function copiarDiagnostico() {
-    var b = ui.balanca;
-    var txt = 'Diário de Treino ' + VERSAO_APP + ' — diagnóstico da balança\n' + navigator.userAgent + '\n' + b.quadros.map(function (q) {
-      return q.t + ' ' + (q.nome || '-') + ' rssi=' + q.rssi + ' ' + q.bruto.map(function (r) { return '0x' + r.id.toString(16) + '[' + r.tam + ']=' + r.hex; }).join(' | ') + (q.leitura ? ' => ' + q.leitura.variante + ' ' + q.leitura.peso + 'kg imp=' + q.leitura.impedancia + (q.leitura.final ? ' final' : '') : '');
-    }).join('\n');
-    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { mostrarFlash('Diagnóstico copiado.'); var f = document.getElementById('flash'); if (f) f.textContent = 'Diagnóstico copiado.'; })
-      .catch(function () { var ta = document.getElementById('bal-txt'); if (ta) { ta.hidden = false; ta.value = txt; ta.select(); } });
   }
 
   /* ---------- ações (data-act) ---------- */
@@ -1006,23 +951,9 @@
     excluirHist: function (id) { abrirConfirm({ tipo: 'excluirHist', alvo: id }); },
     filtroLetra: function (l) { ui.filtroLetra = l; render(); },
     evoModo: function (m) { ui.evoModo = m; render(); },
-    corpoMetrica: function (m) { ui.corpoMetrica = m; render(); },
     corpoPeriodo: function (p) { ui.corpoPeriodo = +p; render(); },
     abrirPeso: function (id) { ui.abertoPeso = ui.abertoPeso === id ? null : id; render(); },
-    novaPesagem: function () { abrirPesagem(null); },
-    editarPeso: function (id) { var p = D.pesagens.find(function (x) { return x.id === id; }); if (p) abrirPesagem(clone(p)); },
     excluirPeso: function (id) { abrirConfirm({ tipo: 'excluirPeso', alvo: id }); },
-    lerBalanca: abrirBalanca,
-    balancaProcurar: procurarBalanca,
-    balancaDiag: function () { ui.balanca.diag = !ui.balanca.diag; renderOverlay(); },
-    balancaCopiar: copiarDiagnostico,
-    balancaDeNovo: function () { pararBalanca(); ui.balanca.etapa = 'inicio'; ui.balanca.msg = ''; renderOverlay(); },
-    balancaUsar: function () {
-      var l = ui.balanca.leitura; pararBalanca();
-      ui.confirm = null; renderOverlay();
-      abrirConfirm({ tipo: 'pesagem', dados: { data: agoraLocalISO(), peso: l.peso, impedancia: l.impedancia || null, origem: 'balanca', variante: l.variante } });
-    },
-    balancaManual: function () { pararBalanca(); ui.confirm = null; renderOverlay(); abrirConfirm({ tipo: 'pesagem', dados: { data: agoraLocalISO(), origem: 'manual' } }); },
     editor: function (on) { ui.editor = on === '1'; ui.picker = false; render(); window.scrollTo(0, 0); },
     pickProg: function (id) { var p = D.programas.find(function (x) { return x.id === id; }); ui.editId = id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; render(); },
     novaDivisao: function () {
@@ -1065,6 +996,8 @@
       ui.picker = false; render();
       var ins = document.querySelectorAll('[data-bind^="exNome:"]'), el = ins[ins.length - 1]; if (el) { el.focus(); el.select(); }
     },
+    lembreteHoje: function () { D.perfil.lembreteAdiado = diaKey(new Date()); salvar(); render(); },
+    lembreteDias: function (n) { D.perfil.lembreteDias = +n; salvar(); render(); },
     relMes: function (d) { var m = mesesComDados(), i = m.indexOf(ui.relMes) + (+d); if (i >= 0 && i < m.length) { ui.relMes = m[i]; render(); } },
     importarRelogio: function () { $saudeFile.value = ''; $saudeFile.click(); },
     preTreino: function () { if (!D.sessao) return; D.sessao.preTreino = !D.sessao.preTreino; salvar(); render(); },
@@ -1173,7 +1106,7 @@
     var lembrete = !sync.vinculado && vivos().length >= 5 && (dd === null || dd >= 14)
       ? '<section class="notice"><strong>Faça um backup</strong><span class="small muted">' + (dd === null ? 'Você ainda não salvou uma cópia do histórico.' : 'Seu último backup foi há ' + dd + ' dias.') + ' Ou entre com Google em Ajustes para guardar tudo na nuvem.</span><button type="button" class="btn sm" data-act="compartilhar">' + icon('share', 18) + 'Salvar backup agora</button></section>' : '';
 
-    return cabecalho('Início', null, hoje) + avisoNegado() + toastHtml() + remoto + hero + atalhos + lembrete + gSemana + gCargas + gMedalhas;
+    return cabecalho('Início', null, hoje) + avisoNegado() + toastHtml() + avisoRelogio(false) + remoto + hero + atalhos + lembrete + gSemana + gCargas + gMedalhas;
   }
   function atalho(act, arg, ic, rot) {
     return '<button type="button" class="atalho" data-act="' + act + '" data-arg="' + arg + '"><span class="atalho-ic">' + icon(ic, 22) + '</span><span>' + rot + '</span></button>';
@@ -1421,63 +1354,107 @@
       (todos.length ? filtros + '<div class="section">' + (html || '<p class="muted">Nenhum treino com esses filtros.</p>') + '</div>' : '<p class="muted">Nenhum treino registrado ainda. Finalize um treino para ele aparecer aqui.</p>');
   }
 
-  /* --- Corpo --- */
-  function imc(peso) { var a = num(D.perfil.altura) / 100; return a > 0.5 && peso ? peso / (a * a) : null; }
-  function faixaImc(v) { return v < 18.5 ? 'abaixo do peso' : v < 25 ? 'faixa saudável' : v < 30 ? 'sobrepeso' : 'obesidade'; }
-  function ultimoCom(lista, k) { for (var i = lista.length - 1; i >= 0; i--) if (lista[i][k] != null) return lista[i]; return null; }
-  function vCorpo() {
-    var lista = pesagensVivas(), ult = lista[lista.length - 1];
-    var acoes = '<div class="row-actions grow"><button type="button" class="btn primary" data-act="novaPesagem">' + icon('plus', 18) + 'Registrar peso</button><button type="button" class="btn outline" data-act="lerBalanca" aria-label="Ler da balança (experimental)">' + icon('bt', 18) + 'Ler balança<span class="pill sm" aria-hidden="true">beta</span></button></div>';
-    var html = cabecalho('Corpo', 'Peso e composição corporal.') + toastHtml() + acoes;
-    if (!lista.length) {
-      return html + '<section class="vazio card flat"><strong>Nenhuma pesagem ainda</strong><span class="small muted">Registre o peso manualmente (e, se quiser, os percentuais que o app OKOK mostra) ou tente a leitura direta da balança.</span></section>' + gavetaPerfil() + gavetaBalancaInfo();
-    }
-    // peso de ~30 dias atrás para comparação
-    var lim = new Date(Date.now() - 30 * 86400000), antigo = null;
-    for (var i = lista.length - 1; i >= 0; i--) { if (new Date(lista[i].data) <= lim) { antigo = lista[i]; break; } }
-    if (!antigo && lista.length > 1) antigo = lista[0];
-    var dif = antigo && antigo !== ult ? ult.peso - antigo.peso : null;
-    var vImc = imc(ult.peso), g = ultimoCom(lista, 'gordura'), m = ultimoCom(lista, 'musculo');
-    var tiles = '<div class="tiles">' +
-      tile('Peso', kg(ult.peso, 1) + ' kg', dif !== null ? (dif > 0 ? '+' : dif < 0 ? '−' : '') + kg(Math.abs(dif), 1) + ' kg desde ' + new Date(antigo.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : new Date(ult.data).toLocaleDateString('pt-BR')) +
-      tile('IMC', vImc ? kg(vImc, 1) : '—', vImc ? faixaImc(vImc) : 'informe a altura em Perfil') +
-      tile('Gordura', g ? kg(g.gordura, 1) + '%' : '—', g ? new Date(g.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'manual / app OKOK') +
-      tile('Massa muscular', m ? kg(m.musculo, 1) + ' kg' : '—', m ? new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : 'manual / app OKOK') + '</div>';
-    var disponiveis = METRICAS.filter(function (mt) { return lista.some(function (p) { return p[mt.k] != null; }); });
-    if (!disponiveis.some(function (mt) { return mt.k === ui.corpoMetrica; })) ui.corpoMetrica = 'peso';
-    var mt = METRICAS.find(function (x) { return x.k === ui.corpoMetrica; });
-    var desde = ui.corpoPeriodo ? new Date(Date.now() - ui.corpoPeriodo * 86400000) : null;
-    var pts = lista.filter(function (p) { return p[mt.k] != null && (!desde || new Date(p.data) >= desde); }).map(function (p) {
-      var dt = new Date(p.data);
-      return { x: pad(dt.getDate()) + '/' + pad(dt.getMonth() + 1), y: p[mt.k], dica: dt.toLocaleDateString('pt-BR') + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + (p.origem === 'balanca' ? ' · balança' : '') };
+  /* --- Corpo: composição corporal medida pelo Galaxy Watch (importada do Samsung Health) --- */
+  function medidasRelogio() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem === 'samsung'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
+  function pesagensAntigas() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem !== 'samsung'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
+  /* um ponto por dia: média das medições do dia (duas medições seguidas costumam variar 1–3 p.p.) */
+  function diasCorpo() {
+    var por = {}, ordem = [];
+    medidasRelogio().forEach(function (m) {
+      var k = m.data.slice(0, 10);
+      if (!por[k]) { por[k] = { n: 0, s: {}, c: {}, altura: null }; ordem.push(k); }
+      var d = por[k]; d.n++;
+      if (m.altura) d.altura = m.altura;
+      MEDIDAS.forEach(function (md) { if (m[md.k] != null) { d.s[md.k] = (d.s[md.k] || 0) + m[md.k]; d.c[md.k] = (d.c[md.k] || 0) + 1; } });
     });
-    var fmt = function (v) { return kg(v, mt.casas) + (mt.un ? (mt.un === '%' ? '%' : ' ' + mt.un) : ''); };
-    var chipsM = disponiveis.map(function (x) { return '<button type="button" class="chip sm-chip" aria-pressed="' + (x.k === mt.k) + '" data-act="corpoMetrica" data-arg="' + x.k + '">' + esc(x.nome) + '</button>'; }).join('');
-    var per = [[30, '30 dias'], [90, '90 dias'], [365, '1 ano'], [0, 'Tudo']].map(function (o) { return '<button type="button" aria-pressed="' + (ui.corpoPeriodo === o[0]) + '" data-act="corpoPeriodo" data-arg="' + o[0] + '">' + o[1] + '</button>'; }).join('');
-    var secGraf = '<section class="section card flat" aria-labelledby="corpo-g"><h2 class="section-title" id="corpo-g">Evolução</h2><div class="chips" role="group" aria-label="Medida">' + chipsM + '</div>' +
-      '<div class="segmented quatro" role="group" aria-label="Período">' + per + '</div>' +
-      (pts.length ? window.Graficos.registrar('corpo', { tipo: 'linha', titulo: mt.nome, pontos: pts, fmtY: fmt, fmtEixo: function (v) { return kg(v, mt.casas === 0 ? 0 : 1); }, altura: 210, colunas: ['Data', mt.nome] }) : '<p class="small muted">Sem registros de ' + esc(mt.nome.toLowerCase()) + ' nesse período.</p>') + '</section>';
-    var itens = lista.slice().reverse().map(function (p) {
-      var dt = new Date(p.data), aberto = ui.abertoPeso === p.id;
-      var extras = METRICAS.filter(function (x) { return x.k !== 'peso' && p[x.k] != null; }).map(function (x) { return '<div><span class="muted small">' + esc(x.nome) + '</span><b>' + kg(p[x.k], x.casas) + (x.un ? (x.un === '%' ? '%' : ' ' + x.un) : '') + '</b></div>'; }).join('');
-      return '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirPeso" data-arg="' + p.id + '"><span class="mini peso" aria-hidden="true">' + icon(p.origem === 'balanca' ? 'bt' : 'edit', 18) + '</span><span class="mid"><b>' + kg(p.peso, 1) + ' kg</b><span class="small muted">' + (p.gordura != null ? kg(p.gordura, 1) + '% gordura · ' : '') + (p.origem === 'balanca' ? 'lido da balança' : 'manual') + '</span></span>' +
-        '<span class="dt">' + dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
-        (aberto ? '<div class="sess-det">' + (extras ? '<div class="stats3 compact">' + extras + '</div>' : '') + (p.impedancia ? '<span class="small muted">Impedância lida: ' + kg(p.impedancia, 1) + ' Ω' + (p.variante ? ' (protocolo ' + esc(p.variante) + ')' : '') + '</span>' : '') + (p.nota ? '<p class="small">' + esc(p.nota) + '</p>' : '') +
-          '<div class="row-actions"><button type="button" class="btn sm" data-act="editarPeso" data-arg="' + p.id + '">' + icon('edit', 16) + 'Editar</button><button type="button" class="link" data-act="excluirPeso" data-arg="' + p.id + '">Excluir</button></div></div>' : '') + '</article>';
+    return ordem.map(function (k) {
+      var d = por[k], o = { dia: k, n: d.n };
+      MEDIDAS.forEach(function (md) { if (d.c[md.k]) o[md.k] = d.s[md.k] / d.c[md.k]; });
+      var alt = d.altura || num(D.perfil.altura);
+      if (o.peso && alt > 50) o.imc = o.peso / Math.pow(alt / 100, 2);
+      return o;
+    });
+  }
+  function semMudanca(md, dif) { return Math.abs(dif) < (md.casas ? 0.05 : 0.5); }
+  function difTxt(md, dif) {
+    if (semMudanca(md, dif)) return 'sem mudança';
+    return (dif > 0 ? '+' : '−') + kg(Math.abs(dif), md.casas) + (md.pp ? ' p.p.' : md.un);
+  }
+  /* barra no estilo do Samsung Health: a medição anterior fica como "sombra" atrás da atual */
+  function barraCorpo(md, serie) {
+    var atual = serie[serie.length - 1], v = atual[md.k];
+    if (v == null) return '';
+    var ant = null;
+    for (var i = serie.length - 2; i >= 0; i--) if (serie[i][md.k] != null) { ant = serie[i]; break; }
+    var vals = serie.map(function (d) { return d[md.k]; }).filter(function (x) { return x != null; });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals), amp = Math.max(mx - mn, Math.abs(mx) * 0.04);
+    var lo = Math.max(0, mn - amp * 0.9), hi = mx + amp * 0.35;
+    function pc(x) { return Math.max(3, Math.min(100, (x - lo) / (hi - lo) * 100)).toFixed(1); }
+    var dif = ant ? v - ant[md.k] : null;
+    var val = kg(v, md.casas) + md.un;
+    var dir = dif === null || semMudanca(md, dif) ? '' : dif > 0 ? 'sobe' : 'desce';
+    var dTxt = dif === null ? 'primeira medição' : difTxt(md, dif) + ' vs. ' + ddmm(ant.dia);
+    return '<div class="cb-linha"><div class="cb-top"><span>' + esc(md.nome) + '</span><b>' + esc(val) + '</b></div>' +
+      '<div class="cb-barra" role="img" aria-label="' + esc(md.nome + ': ' + val + (ant ? '; anterior ' + kg(ant[md.k], md.casas) + md.un : '')) + '">' +
+      (ant ? '<span class="cb-sombra" style="width:' + pc(ant[md.k]) + '%"></span>' : '') + '<span class="cb-atual" style="width:' + pc(v) + '%"></span></div>' +
+      '<span class="small cb-dif ' + dir + '">' + (dir ? icon(dir === 'sobe' ? 'up' : 'down', 14) : '') + esc(dTxt) + '</span></div>';
+  }
+  function itemPesagem(p) {
+    var dt = new Date(p.data), aberto = ui.abertoPeso === p.id, extras;
+    if (p.origem === 'samsung') extras = MEDIDAS.filter(function (md) { return md.k !== 'peso' && md.k !== 'imc' && p[md.k] != null; }).map(function (md) { return '<div><span class="muted small">' + esc(md.nome) + '</span><b>' + kg(p[md.k], md.casas) + esc(md.un) + '</b></div>'; }).join('');
+    else extras = [['gordura', 'Gordura', '%'], ['musculo', 'Massa muscular', ' kg'], ['agua', 'Água', '%']].filter(function (x) { return p[x[0]] != null; }).map(function (x) { return '<div><span class="muted small">' + x[1] + '</span><b>' + kg(p[x[0]], 1) + x[2] + '</b></div>'; }).join('');
+    var resumo = kg(p.peso, 1) + ' kg' + (p.gordura != null ? ' · ' + kg(p.gordura, 1) + '%' : p.origem === 'samsung' ? ' · só peso' : '');
+    return '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirPeso" data-arg="' + esc(p.id) + '"><span class="mini peso" aria-hidden="true">' + icon('body', 18) + '</span><span class="mid"><b>' + esc(resumo) + '</b><span class="small muted">' + (p.origem === 'samsung' ? 'Galaxy Watch' : p.origem === 'balanca' ? 'Balança (Bluetooth)' : 'Manual') + '</span></span>' +
+      '<span class="dt">' + dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes()) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
+      (aberto ? '<div class="sess-det">' + (extras ? '<div class="stats3 compact">' + extras + '</div>' : '') + '<button type="button" class="link" data-act="excluirPeso" data-arg="' + esc(p.id) + '">Excluir este registro</button></div>' : '') + '</article>';
+  }
+  function gavetaAntigas() {
+    var antigas = pesagensAntigas();
+    if (!antigas.length) return '';
+    return gaveta('pesagens-antigas', 'Registros anteriores (OKOK e manuais)', plural(antigas.length, 'registro', 'registros'),
+      '<p class="small muted">Ficam guardados, mas não entram nos gráficos: vêm de outro aparelho e de outro método de medição.</p><div class="section">' + antigas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
+  }
+  function vCorpo() {
+    var html = cabecalho('Corpo', 'Composição corporal medida pelo Galaxy Watch.') + toastHtml() + avisoRelogio(true);
+    var serie = diasCorpo(), medidas = medidasRelogio();
+    var importar = '<button type="button" class="btn sm outline" data-act="importarRelogio">' + icon('upload', 16) + 'Importar</button>';
+    if (!serie.length) {
+      return html + '<section class="vazio card flat"><strong>Nenhuma medição do relógio ainda</strong><span class="small muted">No relógio, abra Composição corporal, informe o peso da balança e faça a medição. Depois exporte no Samsung Health (menu › Configurações › Baixar dados pessoais) e importe aqui: vêm todas as medições já feitas.</span>' +
+        '<button type="button" class="btn primary" data-act="importarRelogio">' + icon('upload', 18) + 'Importar do Samsung Health</button></section>' + gavetaAntigas();
+    }
+    var comBia = serie.filter(function (d) { return d.gordura != null; });
+    var ref = comBia.length ? comBia[comBia.length - 1] : serie[serie.length - 1];
+    var cab = '<div class="cb-cab"><div><span class="eyebrow">Última medição completa</span><b>' + esc(deKey(ref.dia).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })) + '</b>' +
+      (ref.n > 1 ? '<span class="small muted">média de ' + ref.n + ' medições do dia</span>' : '') + '</div>' + importar + '</div>';
+    var bars = MEDIDAS.map(function (md) { var s2 = md.k === 'peso' ? serie : comBia; return s2.length ? barraCorpo(md, s2) : ''; }).join('');
+    var legenda = '<div class="legenda small"><span><i class="lg cb-l-atual"></i>Atual</span><span><i class="lg cb-l-sombra"></i>Medição anterior</span></div>';
+    var secAtual = '<section class="section card flat" aria-labelledby="cb-t"><h2 class="section-title" id="cb-t">Composição corporal</h2>' + cab + '<div class="cb-lista">' + bars + '</div>' + legenda + '</section>';
+
+    var desde = ui.corpoPeriodo ? diaKey(new Date(Date.now() - ui.corpoPeriodo * 86400000)) : '';
+    var noPer = serie.filter(function (d) { return d.dia >= desde; });
+    var per = [[90, '90 dias'], [180, '6 meses'], [365, '1 ano'], [0, 'Tudo']].map(function (o) { return '<button type="button" aria-pressed="' + (ui.corpoPeriodo === o[0]) + '" data-act="corpoPeriodo" data-arg="' + o[0] + '">' + o[1] + '</button>'; }).join('');
+    var trio = [
+      { k: 'peso', curto: 'Peso', nome: 'Peso', un: ' kg', casas: 1, id: 'corpo-peso' },
+      { k: 'musculoEsq', curto: 'Músculo esq.', nome: 'Massa muscular esquelética', un: ' kg', casas: 1, id: 'corpo-musc' },
+      { k: 'gordura', curto: 'Gordura', nome: 'Gordura corporal', un: '%', casas: 1, pp: true, id: 'corpo-gord' }
+    ];
+    function mudanca(md) {
+      var pts = noPer.filter(function (d) { return d[md.k] != null; });
+      if (pts.length < 2) return '<div><span class="muted small">' + esc(md.curto) + '</span><b>—</b><span class="small muted">poucos dados</span></div>';
+      var dif = pts[pts.length - 1][md.k] - pts[0][md.k];
+      return '<div><span class="muted small">' + esc(md.curto) + '</span><b>' + esc(difTxt(md, dif)) + '</b><span class="small muted">desde ' + ddmm(pts[0].dia) + '</span></div>';
+    }
+    var graficos = trio.map(function (md) {
+      var pts = noPer.filter(function (d) { return d[md.k] != null; }).map(function (d) {
+        return { x: ddmm(d.dia), t: deKey(d.dia).getTime(), y: Math.round(d[md.k] * 10) / 10, dica: deKey(d.dia).toLocaleDateString('pt-BR') + (d.n > 1 ? ' · média de ' + d.n + ' medições' : '') };
+      });
+      return '<h3 class="rel-sub">' + esc(md.nome) + '</h3>' + (pts.length ? window.Graficos.registrar(md.id, { tipo: 'linha', titulo: md.nome, pontos: pts, fmtY: function (v) { return kg(v, 1) + md.un; }, fmtEixo: function (v) { return kg(v, 1); }, altura: 180, colunas: ['Data', md.nome] }) : '<p class="small muted">Sem medições neste período.</p>');
     }).join('');
-    return html + tiles + secGraf + gaveta('pesagens', 'Pesagens', plural(lista.length, 'registro', 'registros'), '<div class="section">' + itens + '</div>', false) + gavetaPerfil() + gavetaBalancaInfo();
-  }
-  function tile(rot, val, sub) { return '<div class="tile"><span class="muted small">' + esc(rot) + '</span><b>' + val + '</b><span class="small muted">' + esc(sub) + '</span></div>'; }
-  function gavetaPerfil() {
-    return gaveta('perfil', 'Perfil', D.perfil.altura ? kg(D.perfil.altura, 0) + ' cm' : 'altura para o IMC',
-      '<div class="field"><label for="altura">Altura (cm)</label><input id="altura" class="input" type="text" inputmode="decimal" autocomplete="off" placeholder="ex.: 178" value="' + esc(D.perfil.altura || '') + '" data-bind="altura"></div><span class="small muted">Usada só para calcular o IMC.</span>', !D.perfil.altura);
-  }
-  function gavetaBalancaInfo() {
-    var sup = window.Balanca ? window.Balanca.suporte() : { bluetooth: false, anuncios: false };
-    return gaveta('balanca', 'Leitura da balança (experimental)', sup.anuncios ? 'pronta' : sup.bluetooth ? 'requer ajuste no Chrome' : 'indisponível aqui',
-      '<p class="small">A balança envia o peso pelo Bluetooth sem precisar parear. O app capta esse sinal pelo Chrome, que hoje só permite isso com um recurso experimental ligado.</p>' +
-      '<ol class="passos small"><li>No Chrome do celular, abra <code>chrome://flags</code>.</li><li>Busque <b>Experimental Web Platform features</b> e mude para <b>Enabled</b>.</li><li>Toque em <b>Relaunch</b> e abra o app de novo.</li></ol>' +
-      '<p class="small muted">O app capta peso e impedância. Gordura, músculo e água são calculados pelo app OKOK com fórmulas próprias do fabricante; para guardá-los aqui, copie os valores no formulário da pesagem.</p>', false);
+    var secEvo = '<section class="section card flat" aria-labelledby="ce-t"><h2 class="section-title" id="ce-t">Evolução</h2><div class="segmented quatro" role="group" aria-label="Período">' + per + '</div>' +
+      '<div class="stats3">' + trio.map(mudanca).join('') + '</div>' + graficos +
+      '<span class="small muted">Para a comparação valer, meça sempre nas mesmas condições: de manhã, em jejum, depois de ir ao banheiro e antes de treinar. A bioimpedância erra de 3 a 5 p.p. no valor absoluto; o que importa é a tendência.</span></section>';
+    var lista = gaveta('medicoes', 'Medições do relógio', plural(medidas.length, 'registro', 'registros'), '<div class="section">' + medidas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
+    return html + secAtual + secEvo + lista + gavetaAntigas();
   }
 
   /* --- Ajustes --- */
@@ -1503,7 +1480,8 @@
       '<section class="section card flat"><h2 class="section-title" id="regra-lbl">Sequência</h2><div class="segmented" role="group" aria-labelledby="regra-lbl"><button type="button" aria-pressed="' + !estrita + '" data-act="regra" data-arg="descanso">Até 2 descansos</button><button type="button" aria-pressed="' + estrita + '" data-act="regra" data-arg="estrita">Dias seguidos</button></div>' +
       '<span class="small muted">' + (estrita ? 'Cada dia sem treino zera a sequência.' : 'Até 2 dias de descanso seguidos não quebram a sequência; o 3º dia sem treino quebra. Só dias treinados contam.') + '</span></section>' +
       '<section class="section card flat"><h2 class="section-title">Relógio (Samsung Health)</h2><span class="small muted">' + (D.saude.length ? plural(D.saude.length, 'dia importado', 'dias importados') + ', de ' + ddmm(saudeOrdenada()[0].dia) + ' a ' + esc(deKey(saudeOrdenada()[D.saude.length - 1].dia).toLocaleDateString('pt-BR')) + '. Importar de novo só acrescenta ou atualiza dias.' : 'Nenhum dado importado.') + ' No Samsung Health: menu › Configurações › Baixar dados pessoais; aqui, escolha o .zip ou os .csv da pasta.</span>' +
-      '<div class="row-actions"><button type="button" class="btn sm" data-act="importarRelogio">' + icon('upload', 18) + 'Importar dados do relógio</button></div></section>' +
+      '<div class="row-actions"><button type="button" class="btn sm" data-act="importarRelogio">' + icon('upload', 18) + 'Importar dados do relógio</button></div>' +
+      '<span class="small" id="lemb-lbl">Lembrete para sincronizar e importar</span><div class="segmented quatro" role="group" aria-labelledby="lemb-lbl">' + [[7, '7 dias'], [14, '14 dias'], [30, '30 dias'], [0, 'Desligado']].map(function (o) { return '<button type="button" aria-pressed="' + (lembreteDias() === o[0]) + '" data-act="lembreteDias" data-arg="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></section>' +
       '<section class="section card flat"><h2 class="section-title">Dados e backup</h2><span class="small muted">' + (armazenamentoOk ? 'Uma cópia dos dados fica sempre neste aparelho. ' : 'Este navegador está bloqueando o salvamento — exporte um backup. ') + esc(bk) + '</span>' +
       '<div class="row-actions">' + (podeCompartilhar ? '<button type="button" class="btn sm" data-act="compartilhar">' + icon('share', 18) + 'Enviar backup</button>' : '') +
       '<button type="button" class="btn sm" data-act="exportar">' + icon('download', 18) + 'Exportar backup</button><button type="button" class="btn sm" data-act="importar">' + icon('upload', 18) + 'Importar backup</button></div>' +
@@ -1523,9 +1501,7 @@
     if (!c) { $overlay.innerHTML = ''; document.body.classList.remove('com-dialogo'); return; }
     document.body.classList.add('com-dialogo');
     var corpo;
-    if (c.tipo === 'pesagem') corpo = dlgPesagem(c.dados || {});
-    else if (c.tipo === 'balanca') corpo = dlgBalanca();
-    else if (c.tipo === 'exSessao') {
+    if (c.tipo === 'exSessao') {
       var tS = acharTreino(D.sessao.treinoId), exT = c.modo === 'trocar' ? D.sessao.exs[c.idx] : null;
       corpo = '<h2 id="dlg-t">' + (c.modo === 'add' ? 'Adicionar exercício' : 'Trocar ' + esc(exT.nome)) + '</h2>' +
         '<p id="dlg-d">' + (c.modo === 'add' ? 'Entra no fim da lista de hoje.' : 'O substituto fica no mesmo lugar, com as mesmas séries e repetições.' + (seriesOk(c.idx) ? ' As séries já marcadas deste exercício serão descartadas.' : '')) + '</p>' +
@@ -1541,11 +1517,11 @@
         '<div class="acts"><button type="button" class="btn" data-act="fechar">Manter</button><button type="button" class="btn danger" data-act="confirmar">Remover</button></div>';
     }
     else if (c.tipo === 'importarSaude') {
-      var qtd = c.novos + c.mudados;
+      var qtd = c.novos + c.mudados + c.medNovas + c.medMud;
       corpo = '<h2 id="dlg-t">Exportação do Samsung Health</h2><p id="dlg-d">' + plural(c.total, 'dia', 'dias') + (c.ini ? ', de ' + esc(deKey(c.ini).toLocaleDateString('pt-BR')) + ' a ' + esc(deKey(c.fim).toLocaleDateString('pt-BR')) : '') + ': ' +
-        plural(c.novos, 'novo', 'novos') + ', ' + plural(c.mudados, 'atualizado', 'atualizados') + ', ' + (c.total - qtd) + ' já ' + (c.total - qtd === 1 ? 'estava' : 'estavam') + ' no app.</p>' +
+        plural(c.novos, 'novo', 'novos') + ', ' + plural(c.mudados, 'atualizado', 'atualizados') + '.' + (c.medTotal ? ' Composição corporal: ' + plural(c.medTotal, 'medição', 'medições') + ' (' + plural(c.medNovas, 'nova', 'novas') + (c.medMud ? ', ' + plural(c.medMud, 'atualizada', 'atualizadas') : '') + ').' : '') + '</p>' +
         '<p class="small muted">Encontrado: ' + esc(c.achados.map(function (k) { return NOMES_ACHADOS[k] || k; }).join(', ')) + '. O app guarda só um resumo por dia' + (sync.vinculado ? ', também na sua conta' : '') + '; os arquivos originais não saem do aparelho. Nada do que você registrou no app é alterado.</p>' +
-        '<div class="acts">' + (qtd ? '<button type="button" class="btn" data-act="fechar">Cancelar</button><button type="button" class="btn primary" data-act="confirmar">Importar ' + plural(qtd, 'dia', 'dias') + '</button>' : '<button type="button" class="btn primary" data-act="fechar">Nada novo · Fechar</button>') + '</div>';
+        '<div class="acts">' + (qtd ? '<button type="button" class="btn" data-act="fechar">Cancelar</button><button type="button" class="btn primary" data-act="confirmar">Importar</button>' : '<button type="button" class="btn primary" data-act="fechar">Nada novo · Fechar</button>') + '</div>';
     }
     else if (c.tipo === 'trocar') corpo = '<h2 id="dlg-t">Trocar o próximo treino</h2><p id="dlg-d">Escolha com qual treino seguir. Depois de treinar, o rodízio continua a partir dele.</p>' + letrasProximo(ativo(), proximoTreino(ativo())) +
       '<div class="acts"><button type="button" class="btn" data-act="fechar">Fechar</button></div>';
@@ -1567,41 +1543,11 @@
       }[c.tipo];
       corpo = '<h2 id="dlg-t">' + esc(txt[0]) + '</h2><p id="dlg-d">' + esc(txt[1]) + '</p><div class="acts"><button type="button" class="btn" data-act="fechar">' + esc(txt[3]) + '</button><button type="button" class="btn ' + (txt[4] ? 'danger' : 'primary') + '" data-act="confirmar">' + esc(txt[2]) + '</button></div>';
     }
-    $overlay.innerHTML = '<div class="overlay" data-fundo="1"><div class="sheet' + (c.tipo === 'pesagem' || c.tipo === 'balanca' || c.tipo === 'exSessao' ? ' alta' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlg-t">' + corpo + '</div></div>';
+    $overlay.innerHTML = '<div class="overlay" data-fundo="1"><div class="sheet' + (c.tipo === 'exSessao' ? ' alta' : '') + '" role="dialog" aria-modal="true" aria-labelledby="dlg-t">' + corpo + '</div></div>';
     if (c.tipo === 'exSessao') aplicarBusca();
     var alvo = $overlay.querySelector('[autofocus]') || $overlay.querySelector('[data-act="fechar"]') || $overlay.querySelector('button');
-    if (alvo && c.tipo !== 'pesagem' && c.tipo !== 'exSessao') alvo.focus();
+    if (alvo && c.tipo !== 'exSessao') alvo.focus();
   }
-  function campo(id, rot, val, extra) {
-    return '<div class="field tight"><label for="' + id + '">' + rot + '</label><input id="' + id + '" class="input" type="text" inputmode="decimal" autocomplete="off" value="' + (val == null ? '' : esc(virgula(val))) + '"' + (extra || '') + '></div>';
-  }
-  function dlgPesagem(d) {
-    return '<h2 id="dlg-t">' + (d.id ? 'Editar pesagem' : d.origem === 'balanca' ? 'Pesagem lida da balança' : 'Registrar pesagem') + '</h2>' +
-      (d.origem === 'balanca' ? '<p class="small muted">Peso' + (d.impedancia ? ' e impedância (' + kg(d.impedancia, 1) + ' Ω)' : '') + ' vieram da balança. Se quiser, complete com os valores que o app OKOK mostrou.</p>' : '') +
-      '<div class="form-grid"><div class="field tight span2"><label for="pz-data">Data e hora</label><input id="pz-data" class="input" type="datetime-local" value="' + esc(d.data || agoraLocalISO()) + '"></div>' +
-      campo('pz-peso', 'Peso (kg) *', d.peso, ' required') + campo('pz-gordura', 'Gordura (%)', d.gordura) + campo('pz-musculo', 'Massa muscular (kg)', d.musculo) + campo('pz-agua', 'Água (%)', d.agua) +
-      campo('pz-visceral', 'Gordura visceral', d.visceral) + campo('pz-ossea', 'Massa óssea (kg)', d.ossea) + campo('pz-tmb', 'Metab. basal (kcal)', d.tmb) +
-      '<div class="field tight span2"><label for="pz-nota">Observação</label><input id="pz-nota" class="input" type="text" maxlength="140" value="' + esc(d.nota || '') + '" placeholder="opcional (ex.: em jejum)"></div></div>' +
-      '<p class="small erro-txt" id="pz-erro" role="alert" hidden></p>' +
-      '<div class="acts"><button type="button" class="btn" data-act="fechar">Cancelar</button><button type="button" class="btn primary" data-act="confirmar">Salvar pesagem</button></div>';
-  }
-  function dlgBalanca() {
-    var b = ui.balanca, h = '<h2 id="dlg-t">Ler da balança <span class="pill sm">beta</span></h2>';
-    var manual = '<button type="button" class="btn" data-act="balancaManual">Registrar manualmente</button>';
-    if (b.etapa === 'semBluetooth') return h + '<p id="dlg-d">Este navegador não oferece Bluetooth para sites. Use o app no Chrome do Android (ou no Chrome do computador com Bluetooth).</p><div class="acts">' + manual + '<button type="button" class="btn" data-act="fechar">Fechar</button></div>';
-    if (b.etapa === 'semFlag') return h + '<p id="dlg-d">O Chrome deste aparelho tem Bluetooth, mas a leitura dos sinais da balança ainda é um recurso experimental desligado.</p>' +
-      '<ol class="passos"><li>Abra uma aba e digite <code>chrome://flags</code>.</li><li>Busque <b>Experimental Web Platform features</b> e escolha <b>Enabled</b>.</li><li>Toque em <b>Relaunch</b> e volte ao app.</li></ol><p class="small muted">Esse recurso pode mudar em atualizações do Chrome. O registro manual continua sempre disponível.</p><div class="acts">' + manual + '<button type="button" class="btn" data-act="fechar">Fechar</button></div>';
-    var diag = '<label class="toggle"><input type="checkbox" data-act="balancaDiag"' + (b.diag ? ' checked' : '') + '> Modo diagnóstico (mostra todos os aparelhos e os bytes recebidos)</label>';
-    var diagLista = b.diag && (b.etapa === 'ouvindo' || b.etapa === 'estavel' || b.etapa === 'erro') ? '<ul class="diag" id="bal-diag">' + diagHtml() + '</ul><div class="row-actions"><button type="button" class="btn sm" data-act="balancaCopiar">Copiar diagnóstico</button></div><textarea id="bal-txt" class="input" rows="4" hidden aria-label="Diagnóstico"></textarea><span class="small soft" id="flash" role="status"></span>' : '';
-    if (b.etapa === 'inicio') return h + '<p id="dlg-d">Ligue o Bluetooth, toque em <b>Procurar balança</b> e escolha a balança na lista do Chrome. Depois suba nela descalço e fique parado até o peso travar.</p>' + (b.msg ? '<p class="small erro-txt">' + esc(b.msg) + '</p>' : '') + diag +
-      '<div class="acts"><button type="button" class="btn" data-act="fechar">Cancelar</button><button type="button" class="btn primary" data-act="balancaProcurar" autofocus>' + icon('bt', 18) + 'Procurar balança</button></div>';
-    if (b.etapa === 'ouvindo') return h + '<p id="dlg-d">Conectado a <b>' + esc(b.nome) + '</b>. Suba na balança e espere o peso travar.</p><div class="peso-vivo" aria-live="polite"><b id="bal-peso">--,-</b><span>kg</span></div><span class="small muted center" id="bal-n">aguardando sinal…</span>' + diagLista +
-      '<div class="acts"><button type="button" class="btn" data-act="balancaDeNovo">Parar</button>' + manual + '</div>';
-    if (b.etapa === 'estavel') return h + '<p id="dlg-d">Peso estável recebido.</p><div class="peso-vivo ok"><b>' + kg(b.leitura.peso, 1) + '</b><span>kg</span></div>' + (b.leitura.impedancia ? '<span class="small muted center">Impedância: ' + kg(b.leitura.impedancia, 1) + ' Ω · protocolo ' + esc(b.leitura.variante) + '</span>' : '<span class="small muted center">Protocolo ' + esc(b.leitura.variante) + '</span>') + diagLista +
-      '<div class="acts"><button type="button" class="btn" data-act="balancaDeNovo">Ler de novo</button><button type="button" class="btn primary" data-act="balancaUsar" autofocus>Usar esta leitura</button></div>';
-    return h + '<p id="dlg-d" class="erro-txt">' + esc(b.msg) + '</p>' + diag + diagLista + '<div class="acts"><button type="button" class="btn" data-act="balancaDeNovo">Tentar de novo</button>' + manual + '</div>';
-  }
-
   /* ---------- render ---------- */
   function preferenciaClara() { return D.tema === 'claro' || (D.tema === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches); }
   function aplicarTema() {
@@ -1694,7 +1640,6 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && ui.confirm) { fecharConfirm(false); return; }
-    if (e.key === 'Enter' && ui.confirm && ui.confirm.tipo === 'pesagem' && e.target.tagName === 'INPUT') { e.preventDefault(); salvarPesagem(); return; }
     if (e.key === 'Enter' && e.target.id === 'ex-custom') { e.preventDefault(); A.escolherEx(''); return; }
     if (e.key === 'Enter' && e.target.matches && e.target.matches('#view input[type="text"]')) e.target.blur();
   });
@@ -1718,7 +1663,7 @@
 
   window.addEventListener('popstate', function (e) {
     if (ui.voltandoDialogo) { ui.voltandoDialogo = false; return; }
-    if (ui.confirm) { var c = ui.confirm; if (c.tipo === 'balanca') pararBalanca(); ui.confirm = null; renderOverlay(); return; }
+    if (ui.confirm) { ui.confirm = null; renderOverlay(); return; }
     ui.tela = (e.state && e.state.tela) || 'inicio';
     if (ui.tela !== 'treinar') ui.editor = false;
     ui.picker = false;

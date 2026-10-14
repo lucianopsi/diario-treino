@@ -29,8 +29,12 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 - **Evolução › Relatório do mês**: semana a semana, treinos, duração, volume, progressão de carga, sono e VFC comparada com a média dos 60 dias anteriores, com uma leitura em texto. Abaixo, leituras do mês: treino × recuperação, sono × desempenho e pré-treino × sono. Cada leitura exige uma quantidade mínima de dados.
 - **Pré-treino**: marque o chip na tela do treino em andamento (ou depois, no Histórico).
 
-## Balança OKOK (experimental)
-Leitura do peso (e impedância) pelos anúncios Bluetooth da balança, sem parear. Exige no Chrome do Android: `chrome://flags` › *Experimental Web Platform features* › Enabled. Formatos suportados: V20, V11, VF0 e C0 (documentados pelo projeto openScale). Há um modo diagnóstico para capturar os bytes de modelos não reconhecidos.
+## Corpo (composição corporal do Galaxy Watch)
+
+- A fonte é a medição de composição corporal do relógio. No relógio, informe o peso da balança e meça; depois importe a exportação do Samsung Health. Todas as medições já feitas entram de uma vez, e importar de novo não duplica (cada medição tem o identificador do Samsung Health).
+- A aba Corpo mostra peso, massa muscular esquelética, gordura (%), massa de gordura, massa livre de gordura, água, IMC e metabolismo basal. Cada medida tem uma barra com a medição anterior como "sombra", além da variação. Os gráficos de peso, músculo e gordura usam o eixo de datas real e a média do dia quando há mais de uma medição.
+- Pesagens antigas (manuais ou da balança por Bluetooth) ficam guardadas em "Registros anteriores", fora dos gráficos. A leitura da balança por Bluetooth foi removida na versão 2.3.
+- Lembrete: depois de 7 dias sem importar (mude para 14, 30 ou desligado em Ajustes), aparece um aviso no Início e no Corpo para sincronizar o relógio e importar.
 
 ## Regras da sequência
 - **Até 2 descansos** (padrão): até 2 dias seguidos sem treino não quebram a sequência; o 3º quebra. Só dias treinados contam.

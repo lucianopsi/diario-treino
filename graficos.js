@@ -52,7 +52,10 @@
     function Y(v) { return T + ph - (v - y0) / (y1 - y0 || 1) * ph; }
     var n = s.pontos.length;
     var banda = pw / Math.max(1, n);
-    function X(i) { return s.tipo === 'barras' ? L + banda * i + banda / 2 : (n === 1 ? L + pw / 2 : L + pw * i / (n - 1)); }
+    // linha com "t" (tempo em ms) em todos os pontos: eixo X proporcional às datas, sem esconder intervalos longos
+    var tempo = s.tipo === 'linha' && n > 1 && s.pontos.every(function (p) { return typeof p.t === 'number'; });
+    var t0 = tempo ? s.pontos[0].t : 0, tSpan = tempo ? (s.pontos[n - 1].t - t0) || 1 : 1;
+    function X(i) { return s.tipo === 'barras' ? L + banda * i + banda / 2 : (n === 1 ? L + pw / 2 : tempo ? L + pw * (s.pontos[i].t - t0) / tSpan : L + pw * i / (n - 1)); }
 
     var svg = mk('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, 'aria-hidden': 'true' });
     tk.forEach(function (v) {
@@ -61,6 +64,11 @@
       t.textContent = s.fmtEixo ? s.fmtEixo(v) : v.toLocaleString('pt-BR');
     });
     var idxX = n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 2), n - 1];
+    if (tempo && n > 2) { // rótulo do meio: o ponto mais perto do centro, se não encostar nas pontas
+      var meio = 0, md = Infinity;
+      for (var q = 1; q < n - 1; q++) { var dq = Math.abs(X(q) - (L + pw / 2)); if (dq < md) { md = dq; meio = q; } }
+      idxX = meio && X(meio) - L > 60 && L + pw - X(meio) > 60 ? [0, meio, n - 1] : [0, n - 1];
+    }
     if (s.tipo === 'barras' && n <= 12) idxX = s.pontos.map(function (p, i) { return i; }).filter(function (i) { return n <= 6 || i % 2 === (n - 1) % 2; });
     idxX.forEach(function (i) {
       var anc = s.tipo === 'barras' ? 'middle' : i === 0 && n > 1 ? 'start' : i === n - 1 && n > 1 ? 'end' : 'middle';

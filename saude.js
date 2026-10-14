@@ -144,7 +144,7 @@
   /* ---------- resumo diário ----------
      Cada dia (data em que você acordou) vira um documento:
      { id: 'AAAA-MM-DD', dia, fonte, sono: { horas, nota, eficiencia, latenciaMin, deitou, acordou },
-       fcSono, vfcSono, passos, treinosRelogio: [{ hora, min, fcMedia, fcMax, kcal }], corpo: { peso, gordura, musculo, agua } } */
+       fcSono, vfcSono, passos, treinosRelogio: [{ hora, min, fcMedia, fcMax, kcal }] } */
   function resumir(textos) {
     var dias = {};
     function dia(k) { return dias[k] || (dias[k] = { id: k, dia: k, fonte: 'samsung-health' }); }
@@ -189,16 +189,24 @@
         d.treinosRelogio.sort(function (x, y) { return x.hora < y.hora ? -1 : 1; });
       });
     }
+    /* composição corporal: cada medição do relógio vira um registro próprio (id estável = datauuid,
+       então importar de novo não duplica). Medições só de peso (sem bioimpedância) entram só com o peso. */
+    var medidas = [];
     if (textos.peso) {
       achados.push('peso');
       tabela(textos.peso).forEach(function (r) {
         var a = local(r.v('start_time'), r.v('time_offset')), p = n(r.v('weight'));
         if (!a || !p) return;
-        dia(a.dia).corpo = { hora: a.hm, peso: r1(p), gordura: r1(n(r.v('body_fat'))), musculo: r1(n(r.v('skeletal_muscle_mass'))), agua: r1(n(r.v('total_body_water'))) };
+        var m = { id: 'sh-' + (r.v('datauuid') || a.t), origem: 'samsung', data: a.dia + 'T' + a.hm, dia: a.dia, peso: r1(p) };
+        var campos = { gordura: 'body_fat', gorduraKg: 'body_fat_mass', musculoEsq: 'skeletal_muscle_mass', musculoEsqPct: 'skeletal_muscle', massaMagra: 'fat_free_mass', aguaKg: 'total_body_water', altura: 'height' };
+        Object.keys(campos).forEach(function (k) { var v = n(r.v(campos[k])); if (v != null && v > 0) m[k] = r1(v); });
+        var tmb = n(r.v('basal_metabolic_rate')); if (tmb > 0) m.tmb = Math.round(tmb);
+        medidas.push(m);
       });
+      medidas.sort(function (x, y) { return x.data < y.data ? -1 : 1; });
     }
     var lista = Object.keys(dias).sort().map(function (k) { return dias[k]; });
-    return { dias: lista, achados: achados };
+    return { dias: lista, medidas: medidas, achados: achados };
   }
 
   function importar(arquivos) {
