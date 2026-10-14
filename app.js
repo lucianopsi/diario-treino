@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.1.0';
+  var VERSAO_APP = '2.2.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -61,6 +61,7 @@
   var $overlay = document.getElementById('overlay');
   var $shell = document.querySelector('.shell');
   var $import = document.getElementById('importFile');
+  var $saudeFile = document.getElementById('saudeFile');
   var $sync = document.getElementById('sync');
 
   var D = null;
@@ -70,12 +71,12 @@
   var ui = {
     tela: 'inicio', editor: false, editId: null, editTreinoId: null, picker: false, grupo: 'Peito', busca: '', flash: '',
     toast: '', confirm: null, abertoHist: {}, filtroLetra: '', filtroEx: '', evoEx: '', evoModo: 'carga',
-    corpoMetrica: 'peso', corpoPeriodo: 90, abertoPeso: null, balanca: null
+    corpoMetrica: 'peso', corpoPeriodo: 90, abertoPeso: null, balanca: null, relMes: null
   };
   var sync = {
     disponivel: false, usuario: null, vinculado: false, negado: false, pendentes: 0, erro: null, parar: null,
     timer: null, contagemNuvem: null, liveRemoto: null, ultimoLiveId: null, conflito: null,
-    ultimo: { config: null, prefs: null, live: null, s: {}, w: {} }
+    ultimo: { config: null, prefs: null, live: null, s: {}, w: {}, h: {} }
   };
   var toastT = null, flashT = null, wakeLock = null, eventoInstalar = null, focoAntesDialogo = null, renderPendente = false;
 
@@ -140,7 +141,7 @@
       t('B', 'Costas', [e('Puxada frontal', 4, 10), e('Remada curvada', 4, 10), e('Remada baixa', 3, 12), e('Pulldown (corda)', 3, 15)]),
       t('C', 'Pernas', [e('Agachamento livre', 4, 10), e('Leg press 45°', 4, 12), e('Cadeira extensora', 3, 12), e('Mesa flexora', 3, 12), e('Panturrilha em pé', 4, 15)])
     ] };
-    return normalizar({ v: 1, programas: [abc], ativoId: abc.id, historico: [], regra: 'descanso', tema: 'auto', sessao: null, ultimoBackup: null, pesagens: [], perfil: {}, gavetas: {} });
+    return normalizar({ v: 1, programas: [abc], ativoId: abc.id, historico: [], regra: 'descanso', tema: 'auto', sessao: null, ultimoBackup: null, pesagens: [], saude: [], perfil: {}, gavetas: {} });
   }
 
   function valido(d) {
@@ -153,6 +154,7 @@
     d.regra = d.regra === 'estrita' ? 'estrita' : 'descanso';
     d.tema = ['claro', 'escuro', 'auto'].indexOf(d.tema) >= 0 ? d.tema : 'escuro';
     if (!Array.isArray(d.pesagens)) d.pesagens = [];
+    if (!Array.isArray(d.saude)) d.saude = []; // resumo diário do relógio (Samsung Health), um item por dia
     if (!d.perfil || typeof d.perfil !== 'object') d.perfil = {};
     if (!d.gavetas || typeof d.gavetas !== 'object') d.gavetas = {};
     if (!d.programas.some(function (p) { return p.id === d.ativoId; })) d.ativoId = d.programas[0].id;
@@ -326,6 +328,7 @@
     var total = 0;
     var p = D.programas.find(function (pp) { return pp.treinos.indexOf(t) >= 0; });
     var reg = { id: s.id, dia: diaKey(new Date()), treinoId: t.id, letra: t.letra, nome: t.nome, divisao: p ? p.nome : '', duracao: Math.max(1, Math.round((Date.now() - s.inicio) / 60000)), exs: [] };
+    if (s.preTreino) reg.preTreino = true;
     s.ordem.forEach(function (i) {
       var ex = s.exs[i];
       var feitas = (s.sets[i] || []).filter(function (x) { return x.ok; }).map(function (x) { return { carga: num(x.carga), reps: parseInt(x.reps, 10) || 0 }; });
@@ -402,6 +405,13 @@
         gravarNuvem('weights/' + p.id, p, function () { delete u.w[p.id]; });
       }
     });
+    D.saude.forEach(function (d) {
+      var j = JSON.stringify(semMeta(d));
+      if (u.h[d.id] !== j) {
+        d.atualizadoEm = agora; u.h[d.id] = j; mudou = true;
+        gravarNuvem('health/' + d.id, d, function () { delete u.h[d.id]; });
+      }
+    });
     if (D.sessao) {
       var jl = JSON.stringify(semMeta(D.sessao));
       if (jl !== u.live) {
@@ -459,6 +469,10 @@
         if (mesclar(D.pesagens, docs, sync.ultimo.w)) { gravarLocal(); renderSeguro(); }
         agendarEnvio();
       },
+      health: function (docs) {
+        if (mesclar(D.saude, docs, sync.ultimo.h)) { gravarLocal(); renderSeguro(); }
+        agendarEnvio();
+      },
       live: tratarLive,
       erro: function (e) {
         if (e && e.code === 'permission-denied') { sync.negado = true; sync.erroDetalhe = { codigo: e.code, onde: 'sincronizar' }; } else sync.erro = (e && e.code) || 'erro';
@@ -506,11 +520,14 @@
   function adotarRemoto(r) {
     if (r.config) { D.programas = r.config.programas; D.ativoId = r.config.ativoId; D.regra = r.config.regra || D.regra; D.configEm = r.config.atualizadoEm; }
     if (r.prefs) { D.tema = r.prefs.tema || D.tema; D.gavetas = r.prefs.gavetas || {}; D.perfil = r.prefs.perfil || {}; D.ultimoBackup = r.prefs.ultimoBackup || D.ultimoBackup; D.prefsEm = r.prefs.atualizadoEm; }
-    D.historico = r.sessions.slice(); D.pesagens = r.weights.slice();
+    var saudeLocal = D.saude || [];
+    D.historico = r.sessions.slice(); D.pesagens = r.weights.slice(); D.saude = (r.health || []).slice();
     normalizar(D);
-    sync.ultimo = { config: r.config ? JSON.stringify(cfgDe()) : null, prefs: r.prefs ? JSON.stringify(prefsDe()) : null, live: null, s: {}, w: {} };
+    sync.ultimo = { config: r.config ? JSON.stringify(cfgDe()) : null, prefs: r.prefs ? JSON.stringify(prefsDe()) : null, live: null, s: {}, w: {}, h: {} };
     D.historico.forEach(function (h) { sync.ultimo.s[h.id] = JSON.stringify(semMeta(h)); });
     D.pesagens.forEach(function (p) { sync.ultimo.w[p.id] = JSON.stringify(semMeta(p)); });
+    D.saude.forEach(function (d) { sync.ultimo.h[d.id] = JSON.stringify(semMeta(d)); });
+    mesclarLocalSobre(D.saude, saudeLocal, sync.ultimo.h); // dados do relógio nunca se perdem: são somados
     gravarLocal();
   }
 
@@ -542,7 +559,7 @@
     exportar('arquivo', 'treino-backup-antes-da-nuvem-');
     var r = sync.conflito, antes = vivos().length;
     if (opcao === 'enviar') {
-      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {} };
+      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {}, h: {} };
       vincular();
       mostrarToast('Enviando ' + plural(antes, 'treino', 'treinos') + ' e ' + plural(pesagensVivas().length, 'pesagem', 'pesagens') + ' para a nuvem. Um backup foi baixado antes.');
     } else if (opcao === 'nuvem') {
@@ -564,7 +581,7 @@
       var idsP = {};
       D.pesagens.forEach(function (p) { idsP[p.id] = true; });
       r.weights.forEach(function (w) { if (!idsP[w.id] && !w.apagado) { var c = clone(w); c.apagado = true; D.pesagens.push(c); } });
-      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {} };
+      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {}, h: {} };
       gravarLocal(); vincular();
       mostrarToast('A nuvem foi substituída pelos dados deste aparelho (' + plural(antes, 'treino', 'treinos') + '). Os registros que só existiam na nuvem foram marcados como apagados, não destruídos.');
     }
@@ -682,6 +699,7 @@
       if (sync.vinculado) { // importar com nuvem ativa: junta pelo id, sem apagar nada
         mesclarLocalSobre(D.historico, dados.historico || [], sync.ultimo.s);
         mesclarLocalSobre(D.pesagens, dados.pesagens || [], sync.ultimo.w);
+        mesclarLocalSobre(D.saude, dados.saude || [], sync.ultimo.h);
         D.programas = dados.programas; D.ativoId = dados.ativoId; normalizar(D); marcarEdicao();
       } else { D = normalizar(dados); }
       var a2 = ativo(); ui.editId = a2.id; ui.editTreinoId = a2.treinos[0].id; ui.abertoHist = {};
@@ -690,9 +708,102 @@
       D = exemplo(); ui.editId = D.ativoId; ui.editTreinoId = D.programas[0].treinos[0].id; ui.abertoHist = {};
     } else if (c.tipo === 'migrarEnviar') { migrar('enviar'); return; }
     else if (c.tipo === 'migrarConflito') { migrar(arg); return; }
+    else if (c.tipo === 'importarSaude') { aplicarSaude(c); }
     else if (c.tipo === 'trocar') { /* tratado no próprio botão */ }
     salvar();
     render();
+  }
+
+  /* ---------- dados do relógio (Samsung Health) ---------- */
+  var NOMES_ACHADOS = { sono: 'sono', vitalidade: 'FC e VFC noturnas', passos: 'passos', exercicio: 'treinos de força do relógio', peso: 'composição corporal do relógio' };
+  function chaveSaude(d) { var c = semMeta(d); delete c.importadoEm; return JSON.stringify(c); }
+  function saudeOrdenada() { return D.saude.slice().sort(function (a, b) { return a.dia < b.dia ? -1 : 1; }); }
+  function lerSaude(arquivos) {
+    if (!window.Saude) { mostrarToast('O leitor dos dados do relógio não carregou. Recarregue o app.'); render(); return; }
+    mostrarToast('Lendo a exportação do Samsung Health…'); render();
+    window.Saude.importar(arquivos).then(function (r) {
+      var mapa = {}; D.saude.forEach(function (d) { mapa[d.id] = d; });
+      var novos = 0, mudados = 0, docs = [];
+      r.dias.forEach(function (d) {
+        var a = mapa[d.id], m = a ? Object.assign({}, a, d) : d; // campos que não vieram nesta importação ficam como estavam
+        if (!a) { novos++; docs.push(m); }
+        else if (chaveSaude(a) !== chaveSaude(m)) { mudados++; docs.push(m); }
+      });
+      ui.toast = '';
+      abrirConfirm({ tipo: 'importarSaude', docs: docs, total: r.dias.length, novos: novos, mudados: mudados, ini: r.dias.length ? r.dias[0].dia : null, fim: r.dias.length ? r.dias[r.dias.length - 1].dia : null, achados: r.achados });
+    }).catch(function (e) {
+      var c = e && e.message;
+      mostrarToast(c === 'nada' ? 'Não encontrei os arquivos do Samsung Health (sleep, vitality_score, exercise…). Escolha o .zip da exportação ou os .csv da pasta.'
+        : c === 'sem-descompressao' ? 'Este navegador não abre .zip. Selecione os arquivos .csv da pasta exportada.'
+        : 'Não consegui ler esse arquivo (' + (c || 'erro') + '). Tente selecionar os .csv da pasta exportada.');
+      render();
+    });
+  }
+  function aplicarSaude(c) {
+    var agora = Date.now(), pos = {};
+    D.saude.forEach(function (d, i) { pos[d.id] = i; });
+    c.docs.forEach(function (d) {
+      d.importadoEm = agora;
+      if (pos[d.id] == null) D.saude.push(d); else D.saude[pos[d.id]] = d;
+    });
+    D.saude.sort(function (a, b) { return a.dia < b.dia ? -1 : 1; });
+    ui.relMes = null;
+    mostrarToast('Dados do relógio importados: ' + plural(c.novos, 'dia novo', 'dias novos') + (c.mudados ? ', ' + plural(c.mudados, 'atualizado', 'atualizados') : '') + '. Veja o relatório em Evolução.');
+  }
+  function mesesComDados() {
+    var ks = {};
+    D.saude.forEach(function (d) { ks[d.dia.slice(0, 7)] = true; });
+    vivos().forEach(function (h) { ks[h.dia.slice(0, 7)] = true; });
+    ks[diaKey(new Date()).slice(0, 7)] = true;
+    return Object.keys(ks).sort();
+  }
+  function nomeMes(mk) { var t = deKey(mk + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); return t.charAt(0).toUpperCase() + t.slice(1); }
+  function faixaDias(a, b) {
+    var A = deKey(a), B = deKey(b), m = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    return A.getMonth() === B.getMonth() ? A.getDate() + '–' + B.getDate() + ' ' + m[B.getMonth()] : A.getDate() + ' ' + m[A.getMonth()] + ' – ' + B.getDate() + ' ' + m[B.getMonth()];
+  }
+  function relatorioHtml() {
+    var meses = mesesComDados();
+    if (!ui.relMes || meses.indexOf(ui.relMes) < 0) {
+      // padrão: o mês atual; no começo do mês (menos de 7 dias), o anterior
+      var hj = new Date(), atual = diaKey(hj).slice(0, 7), ant = diaKey(new Date(hj.getFullYear(), hj.getMonth() - 1, 1)).slice(0, 7);
+      ui.relMes = hj.getDate() < 7 && meses.indexOf(ant) >= 0 ? ant : atual;
+    }
+    var ix = meses.indexOf(ui.relMes);
+    var nav = '<div class="mes-nav"><button type="button" class="icon-btn sm" aria-label="Mês anterior" data-act="relMes" data-arg="-1"' + (ix <= 0 ? ' disabled' : '') + '>' + icon('back', 18) + '</button>' +
+      '<b>' + esc(nomeMes(ui.relMes)) + '</b><button type="button" class="icon-btn sm" aria-label="Próximo mês" data-act="relMes" data-arg="1"' + (ix >= meses.length - 1 ? ' disabled' : '') + '>' + icon('chev', 18) + '</button></div>';
+    var topo = '<div class="rel-top"><h2 class="section-title" id="rel-t">Relatório do mês</h2>' + nav + '</div>';
+    if (!D.saude.length) {
+      return '<section class="section card flat rel" aria-labelledby="rel-t">' + topo +
+        '<p class="small">Cruza o sono e a recuperação medidos pelo relógio com os seus treinos, semana a semana. Para isso, importe a exportação do Samsung Health.</p>' +
+        '<button type="button" class="btn primary" data-act="importarRelogio">' + icon('upload', 18) + 'Importar dados do relógio</button>' +
+        '<span class="small muted">No Samsung Health: menu › Configurações › Baixar dados pessoais. Depois escolha aqui o .zip ou os arquivos .csv da pasta criada.</span></section>';
+    }
+    var R = window.Saude.mensal(ui.relMes, { sessoes: vivos(), saude: saudeOrdenada(), hoje: diaKey(new Date()) });
+    var T = R.totais;
+    var difV = T.vfc != null && T.refVfc != null ? T.vfc - T.refVfc : null;
+    var tot = '<div class="stats3"><div><span class="muted small">Treinos</span><b>' + T.treinos + '</b><span class="small muted">no mês</span></div>' +
+      '<div><span class="muted small">Sono médio</span><b>' + (T.sono != null ? window.Saude.horasTxt(T.sono) : '—') + '</b><span class="small muted">' + plural(T.nSono, 'noite', 'noites') + '</span></div>' +
+      '<div><span class="muted small">VFC no sono</span><b>' + (T.vfc != null ? Math.round(T.vfc) + '<small> ms</small>' : '—') + '</b><span class="small muted">' + (difV != null ? (Math.abs(difV) < 1 ? 'igual aos 60 dias antes' : (difV > 0 ? '+' : '−') + kg(Math.abs(difV), 0) + ' vs. 60 dias antes') : 'sem referência') + '</span></div></div>';
+    var rotulo = { abaixo: 'Abaixo do seu normal', faixa: 'No seu normal', acima: 'Acima do seu normal' };
+    var sems = R.semanas.filter(function (w) { return !w.futura; }).map(function (w) {
+      var dados = [];
+      dados.push(plural(w.treinos, 'treino', 'treinos') + (w.duracao ? ' · ' + w.duracao + ' min' : ''));
+      if (w.sono != null) dados.push('sono ' + window.Saude.horasTxt(w.sono));
+      if (w.vfc != null) dados.push('VFC ' + Math.round(w.vfc) + ' ms');
+      if (w.volume) dados.push(Math.round(w.volume).toLocaleString('pt-BR') + ' kg de volume');
+      var est = w.estadoVfc ? '<span class="rel-est ' + w.estadoVfc + '"><i aria-hidden="true"></i>' + rotulo[w.estadoVfc] + '</span>' : '';
+      return '<article class="rel-sem"><div class="rel-sem-top"><b>' + esc(faixaDias(w.inicio, w.fim)) + '</b>' + est + '</div>' +
+        '<span class="small soft">' + esc(dados.join(' · ')) + '</span>' +
+        (w.frases.length ? '<p>' + w.frases.map(esc).join(' ') + '</p>' : '') + '</article>';
+    }).join('');
+    var achados = R.achados.map(function (a) { return '<div class="rel-achado' + (a.fraco ? ' fraco' : '') + '"><b>' + esc(a.tit) + '</b><p class="small">' + esc(a.txt) + '</p></div>'; }).join('');
+    var rodape = '<div class="rel-rodape"><span class="small muted">Dados do relógio até ' + (R.ultimoDado ? ddmm(R.ultimoDado) : '—') + (R.faltaDepois ? ' — importe de novo para completar o mês' : '') + '.</span>' +
+      '<button type="button" class="btn sm" data-act="importarRelogio">' + icon('upload', 16) + 'Importar de novo</button></div>' +
+      '<span class="small muted">"Seu normal" é a média dos 60 dias anteriores. São associações nos seus próprios dados, não diagnóstico; semanas com menos de 3 noites medidas ficam sem leitura.</span>';
+    return '<section class="section card flat rel" aria-labelledby="rel-t">' + topo + tot +
+      (sems ? '<div class="rel-sems">' + sems + '</div>' : '<p class="small muted">Nenhuma semana deste mês com dados ainda.</p>') +
+      '<h3 class="rel-sub">Leituras do mês</h3>' + achados + rodape + '</section>';
   }
 
   /* ---------- pesagens ---------- */
@@ -954,6 +1065,10 @@
       ui.picker = false; render();
       var ins = document.querySelectorAll('[data-bind^="exNome:"]'), el = ins[ins.length - 1]; if (el) { el.focus(); el.select(); }
     },
+    relMes: function (d) { var m = mesesComDados(), i = m.indexOf(ui.relMes) + (+d); if (i >= 0 && i < m.length) { ui.relMes = m[i]; render(); } },
+    importarRelogio: function () { $saudeFile.value = ''; $saudeFile.click(); },
+    preTreino: function () { if (!D.sessao) return; D.sessao.preTreino = !D.sessao.preTreino; salvar(); render(); },
+    histPre: function (id) { var h = D.historico.find(function (x) { return x.id === id; }); if (!h) return; if (h.preTreino) delete h.preTreino; else h.preTreino = true; salvar(); render(); },
     tema: function (t) { D.tema = ['claro', 'escuro', 'auto'].indexOf(t) >= 0 ? t : 'auto'; salvar(); render(); },
     exportar: function () { exportar('arquivo'); },
     compartilhar: function () { exportar('compartilhar'); },
@@ -1155,7 +1270,7 @@
         '<button type="button" class="icon-btn sm" aria-label="Mover ' + esc(ex.nome) + ' para baixo" data-act="mover" data-arg="' + pos + ',1"' + (pos === s.ordem.length - 1 ? ' disabled' : '') + '>' + icon('down', 18) + '</button></div></div>' +
         corpo + '</section>';
     }).join('');
-    return '<div class="sess-head"><div class="sess-row"><button type="button" class="link plain" data-act="cancelar">Cancelar</button><span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></div>' +
+    return '<div class="sess-head"><div class="sess-row"><button type="button" class="link plain" data-act="cancelar">Cancelar</button><span class="sess-dir"><button type="button" class="chip sm-chip pre" aria-pressed="' + !!s.preTreino + '" data-act="preTreino">' + (s.preTreino ? icon('check', 16) : '') + 'Pré-treino</button><span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></span></div>' +
       '<div class="sess-title"><div class="badge on" aria-hidden="true">' + esc(t.letra) + '</div><div class="sess-title-txt"><span class="eyebrow">Em andamento' + (sync.vinculado ? ' · na nuvem' : '') + '</span><h1>' + esc(t.nome) + '</h1></div></div>' +
       '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + exs.length + '" aria-valuenow="' + feitos + '" aria-label="Exercícios concluídos"><span style="width:' + pct + '%"></span></div><span class="small soft nowrap">' + feitos + ' de ' + exs.length + ' exercícios</span></div></div>' +
       '<div class="sess-list">' + aviso + '<p class="small muted">Toque num exercício para abrir. Use as setas para mudar a ordem; dá para trocar, remover ou adicionar exercícios só para hoje.</p>' + itens +
@@ -1216,7 +1331,8 @@
   }
   function vEvolucao() {
     var seq = sequencia(D.regra), nomes = nomesComHistorico(), p = ativo();
-    var html = cabecalho('Evolução', 'Cargas, volume, frequência e recordes.');
+    var html = cabecalho('Evolução', 'Relatório do mês, cargas, frequência e recordes.') + toastHtml();
+    html += relatorioHtml();
     if (!vivos().length) return html + '<section class="vazio card flat"><strong>Ainda sem treinos registrados</strong><span class="small muted">Os gráficos aparecem depois do primeiro treino finalizado.</span><button type="button" class="btn primary" data-act="ir" data-arg="treinar">Ir para Treinar</button></section>' + calendarioHtml(seq);
     if (!ui.evoEx || nomes.indexOf(ui.evoEx) < 0) {
       var prim = null; p.treinos.some(function (t) { return t.exs.some(function (x) { if (nomes.indexOf(x.nome) >= 0) { prim = x.nome; return true; } return false; }); });
@@ -1295,9 +1411,10 @@
       if (mk !== mesAtual) { mesAtual = mk; html += '<h2 class="mes-tit">' + esc(deKey(mk + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) + '</h2>'; }
       var n = h.exs.reduce(function (a, x) { return a + x.sets.length; }, 0), vol = h.exs.reduce(function (a, x) { return a + x.sets.reduce(function (b2, y) { return b2 + y.carga * y.reps; }, 0); }, 0);
       var aberto = !!ui.abertoHist[h.id];
-      html += '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirHist" data-arg="' + h.id + '"><span class="mini" aria-hidden="true">' + esc(h.letra) + '</span><span class="mid"><b>Treino ' + esc(h.letra) + ' · ' + esc(h.nome) + '</b><span class="small muted">' + h.duracao + ' min · ' + plural(n, 'série', 'séries') + ' · ' + Math.round(vol).toLocaleString('pt-BR') + ' kg</span></span>' +
+      html += '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirHist" data-arg="' + h.id + '"><span class="mini" aria-hidden="true">' + esc(h.letra) + '</span><span class="mid"><b>Treino ' + esc(h.letra) + ' · ' + esc(h.nome) + '</b><span class="small muted">' + h.duracao + ' min · ' + plural(n, 'série', 'séries') + ' · ' + Math.round(vol).toLocaleString('pt-BR') + ' kg' + (h.preTreino ? ' · pré-treino' : '') + '</span></span>' +
         '<span class="dt">' + esc(deKey(h.dia).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
         (aberto ? '<div class="sess-det">' + h.exs.map(function (x) { return '<div class="ex' + (x.nome === ui.filtroEx ? ' destaque' : '') + '"><b>' + esc(x.nome) + '</b><span>' + x.sets.map(function (y) { return kg(y.carga) + '×' + y.reps; }).join('  ·  ') + '</span></div>'; }).join('') +
+          '<div class="row-actions"><button type="button" class="btn sm" aria-pressed="' + !!h.preTreino + '" data-act="histPre" data-arg="' + h.id + '">' + (h.preTreino ? 'Tirar marca de pré-treino' : 'Marcar: usei pré-treino') + '</button></div>' +
           '<button type="button" class="link" data-act="excluirHist" data-arg="' + h.id + '">Excluir este registro</button></div>' : '') + '</article>';
     });
     return cabecalho('Histórico', plural(todos.length, 'treino registrado', 'treinos registrados') + (sync.vinculado && sync.contagemNuvem !== null ? ' · ' + sync.contagemNuvem + ' na nuvem' : '')) + toastHtml() +
@@ -1385,6 +1502,8 @@
       '<section class="section card flat"><h2 class="section-title" id="tema-lbl">Aparência</h2>' + temaHtml + '</section>' +
       '<section class="section card flat"><h2 class="section-title" id="regra-lbl">Sequência</h2><div class="segmented" role="group" aria-labelledby="regra-lbl"><button type="button" aria-pressed="' + !estrita + '" data-act="regra" data-arg="descanso">Até 2 descansos</button><button type="button" aria-pressed="' + estrita + '" data-act="regra" data-arg="estrita">Dias seguidos</button></div>' +
       '<span class="small muted">' + (estrita ? 'Cada dia sem treino zera a sequência.' : 'Até 2 dias de descanso seguidos não quebram a sequência; o 3º dia sem treino quebra. Só dias treinados contam.') + '</span></section>' +
+      '<section class="section card flat"><h2 class="section-title">Relógio (Samsung Health)</h2><span class="small muted">' + (D.saude.length ? plural(D.saude.length, 'dia importado', 'dias importados') + ', de ' + ddmm(saudeOrdenada()[0].dia) + ' a ' + esc(deKey(saudeOrdenada()[D.saude.length - 1].dia).toLocaleDateString('pt-BR')) + '. Importar de novo só acrescenta ou atualiza dias.' : 'Nenhum dado importado.') + ' No Samsung Health: menu › Configurações › Baixar dados pessoais; aqui, escolha o .zip ou os .csv da pasta.</span>' +
+      '<div class="row-actions"><button type="button" class="btn sm" data-act="importarRelogio">' + icon('upload', 18) + 'Importar dados do relógio</button></div></section>' +
       '<section class="section card flat"><h2 class="section-title">Dados e backup</h2><span class="small muted">' + (armazenamentoOk ? 'Uma cópia dos dados fica sempre neste aparelho. ' : 'Este navegador está bloqueando o salvamento — exporte um backup. ') + esc(bk) + '</span>' +
       '<div class="row-actions">' + (podeCompartilhar ? '<button type="button" class="btn sm" data-act="compartilhar">' + icon('share', 18) + 'Enviar backup</button>' : '') +
       '<button type="button" class="btn sm" data-act="exportar">' + icon('download', 18) + 'Exportar backup</button><button type="button" class="btn sm" data-act="importar">' + icon('upload', 18) + 'Importar backup</button></div>' +
@@ -1420,6 +1539,13 @@
       corpo = '<h2 id="dlg-t">Remover ' + esc(exR.nome) + '?</h2><p id="dlg-d">Sai do treino de hoje' + (seriesOk(c.alvo) ? ', junto com as ' + plural(seriesOk(c.alvo), 'série marcada', 'séries marcadas') : '') + '. Os registros antigos continuam no histórico.</p>' +
         '<label class="toggle"><input type="checkbox" data-act="exPerm"' + (c.perm ? ' checked' : '') + '> Remover também do treino ' + esc(tR ? tR.letra : '') + ' (próximas vezes)</label>' +
         '<div class="acts"><button type="button" class="btn" data-act="fechar">Manter</button><button type="button" class="btn danger" data-act="confirmar">Remover</button></div>';
+    }
+    else if (c.tipo === 'importarSaude') {
+      var qtd = c.novos + c.mudados;
+      corpo = '<h2 id="dlg-t">Exportação do Samsung Health</h2><p id="dlg-d">' + plural(c.total, 'dia', 'dias') + (c.ini ? ', de ' + esc(deKey(c.ini).toLocaleDateString('pt-BR')) + ' a ' + esc(deKey(c.fim).toLocaleDateString('pt-BR')) : '') + ': ' +
+        plural(c.novos, 'novo', 'novos') + ', ' + plural(c.mudados, 'atualizado', 'atualizados') + ', ' + (c.total - qtd) + ' já ' + (c.total - qtd === 1 ? 'estava' : 'estavam') + ' no app.</p>' +
+        '<p class="small muted">Encontrado: ' + esc(c.achados.map(function (k) { return NOMES_ACHADOS[k] || k; }).join(', ')) + '. O app guarda só um resumo por dia' + (sync.vinculado ? ', também na sua conta' : '') + '; os arquivos originais não saem do aparelho. Nada do que você registrou no app é alterado.</p>' +
+        '<div class="acts">' + (qtd ? '<button type="button" class="btn" data-act="fechar">Cancelar</button><button type="button" class="btn primary" data-act="confirmar">Importar ' + plural(qtd, 'dia', 'dias') + '</button>' : '<button type="button" class="btn primary" data-act="fechar">Nada novo · Fechar</button>') + '</div>';
     }
     else if (c.tipo === 'trocar') corpo = '<h2 id="dlg-t">Trocar o próximo treino</h2><p id="dlg-d">Escolha com qual treino seguir. Depois de treinar, o rodízio continua a partir dele.</p>' + letrasProximo(ativo(), proximoTreino(ativo())) +
       '<div class="acts"><button type="button" class="btn" data-act="fechar">Fechar</button></div>';
@@ -1573,6 +1699,9 @@
     if (e.key === 'Enter' && e.target.matches && e.target.matches('#view input[type="text"]')) e.target.blur();
   });
 
+  $saudeFile.addEventListener('change', function () {
+    if ($saudeFile.files && $saudeFile.files.length) lerSaude($saudeFile.files);
+  });
   $import.addEventListener('change', function () {
     var f = $import.files && $import.files[0];
     if (!f) return;
@@ -1623,7 +1752,7 @@
     if (!u) {
       if (sync.parar) sync.parar();
       sync.parar = null; sync.usuario = null; sync.vinculado = false; sync.negado = false; sync.erro = null; sync.contagemNuvem = null; sync.liveRemoto = null;
-      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {} };
+      sync.ultimo = { config: null, prefs: null, live: null, s: {}, w: {}, h: {} };
       renderSeguro(); return;
     }
     if (sync.usuario && sync.usuario.uid === u.uid) return;

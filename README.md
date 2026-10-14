@@ -22,6 +22,13 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 - Primeiro login: com dados só no aparelho, o app oferece enviá-los; com dados nos dois lugares, pergunta (juntar sem duplicar / manter a nuvem / substituir pela local). Antes, baixa um backup JSON.
 - **Ajustes › Dados e backup**: exportar e importar backup JSON.
 
+## Relógio (Samsung Health) e relatório do mês
+
+- No Samsung Health: menu › Configurações › Baixar dados pessoais. Em Ajustes ou Evolução, toque em **Importar dados do relógio** e escolha o `.zip` da exportação ou os `.csv` da pasta.
+- O app lê só sono, FC/VFC noturnas (índice de vitalidade), passos, treinos de força e composição corporal, e guarda um resumo por dia em `apps/treino/users/{uid}/health/{AAAA-MM-DD}`. Os arquivos originais não saem do aparelho. Importar de novo só acrescenta ou atualiza dias.
+- **Evolução › Relatório do mês**: semana a semana, treinos, duração, volume, progressão de carga, sono e VFC comparada com a média dos 60 dias anteriores, com uma leitura em texto. Abaixo, leituras do mês: treino × recuperação, sono × desempenho e pré-treino × sono. Cada leitura exige uma quantidade mínima de dados.
+- **Pré-treino**: marque o chip na tela do treino em andamento (ou depois, no Histórico).
+
 ## Balança OKOK (experimental)
 Leitura do peso (e impedância) pelos anúncios Bluetooth da balança, sem parear. Exige no Chrome do Android: `chrome://flags` › *Experimental Web Platform features* › Enabled. Formatos suportados: V20, V11, VF0 e C0 (documentados pelo projeto openScale). Há um modo diagnóstico para capturar os bytes de modelos não reconhecidos.
 

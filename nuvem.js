@@ -58,23 +58,25 @@ const Nuvem = {
 
   /* Leitura completa (usada na primeira vinculação, que exige internet). */
   async lerTudo(uid) {
-    const [cfg, prefs, sess, pes, live] = await Promise.all([
+    const [cfg, prefs, sess, pes, live, saude] = await Promise.all([
       getDoc(doc(db, caminho(uid, 'config/main'))),
       getDoc(doc(db, caminho(uid, 'config/prefs'))),
       getDocs(collection(db, caminho(uid, 'sessions'))),
       getDocs(collection(db, caminho(uid, 'weights'))),
-      getDoc(doc(db, caminho(uid, 'live/current')))
+      getDoc(doc(db, caminho(uid, 'live/current'))),
+      getDocs(collection(db, caminho(uid, 'health')))
     ]);
     return {
       config: cfg.exists() ? cfg.data() : null,
       prefs: prefs.exists() ? prefs.data() : null,
       sessions: sess.docs.map((d) => d.data()),
       weights: pes.docs.map((d) => d.data()),
-      live: live.exists() ? live.data() : null
+      live: live.exists() ? live.data() : null,
+      health: saude.docs.map((d) => d.data())
     };
   },
 
-  /* Escuta contínua. h = { config, prefs, sessions, weights, live, erro } */
+  /* Escuta contínua. h = { config, prefs, sessions, weights, health, live, erro } */
   escutar(uid, h) {
     const err = (e) => h.erro && h.erro(e);
     const subs = [
@@ -82,7 +84,8 @@ const Nuvem = {
       onSnapshot(doc(db, caminho(uid, 'config/prefs')), (s) => h.prefs(s.exists() ? s.data() : null), err),
       onSnapshot(collection(db, caminho(uid, 'sessions')), (s) => h.sessions(s.docs.map((d) => d.data())), err),
       onSnapshot(collection(db, caminho(uid, 'weights')), (s) => h.weights(s.docs.map((d) => d.data())), err),
-      onSnapshot(doc(db, caminho(uid, 'live/current')), (s) => h.live(s.exists() ? s.data() : null), err)
+      onSnapshot(doc(db, caminho(uid, 'live/current')), (s) => h.live(s.exists() ? s.data() : null), err),
+      onSnapshot(collection(db, caminho(uid, 'health')), (s) => h.health && h.health(s.docs.map((d) => d.data())), err)
     ];
     return () => subs.forEach((f) => f());
   }
