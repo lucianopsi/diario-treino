@@ -1,6 +1,6 @@
 /* Service worker: guarda o app no aparelho para funcionar sem internet.
    Ao publicar uma versão nova, aumente VERSAO para o celular baixar os arquivos novos. */
-const VERSAO = 'treino-v2.4.0';
+const VERSAO = 'treino-v2.4.1';
 const ARQUIVOS = [
   './',
   './index.html',

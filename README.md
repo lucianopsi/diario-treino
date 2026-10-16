@@ -9,7 +9,7 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 
 ## Como funciona o treino
 
-- Treinar › editar › "Modelo superior/inferior (4×)" cria a divisão A (superior 1), B (inferior 1, posterior e glúteo), C (superior 2) e D (inferior 2, quadríceps), com cargas de referência tiradas do histórico. A divisão ABC continua salva.
+- Treinar › editar › "Modelo: ABC ajustado" e "Modelo: superior/inferior (4×)" criam divisões prontas (sem apagar as existentes). O superior/inferior cria A (superior 1), B (inferior 1, posterior e glúteo), C (superior 2) e D (inferior 2, quadríceps), com cargas de referência tiradas do histórico. A divisão ABC continua salva.
 1. Em **Treinar**, o app destaca o próximo treino pelo rodízio (A → B → C). Faltou ou a semana começou por outro treino? Toque na letra em **Próximo treino** para ajustar; depois do treino feito, o rodízio segue a partir dele.
 2. **Iniciar** abre a lista de exercícios do dia com uma sugestão de por onde começar. Aparelho ocupado? Escolha qualquer outro da lista.
 3. Na tela do exercício aparecem só as séries dele e a referência do histórico: última vez, recorde e se a carga subiu ou caiu. Campos vazios usam o valor em cinza ao marcar a série.

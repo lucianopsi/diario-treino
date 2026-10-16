@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.4.0';
+  var VERSAO_APP = '2.4.1';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -960,24 +960,15 @@
     excluirPeso: function (id) { abrirConfirm({ tipo: 'excluirPeso', alvo: id }); },
     editor: function (on) { ui.editor = on === '1'; ui.picker = false; render(); window.scrollTo(0, 0); },
     pickProg: function (id) { var p = D.programas.find(function (x) { return x.id === id; }); ui.editId = id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; render(); },
-    modeloSI: function () {
-      function e(nome, series, reps) {
-        var r = registrosDe(nome), ult = r.length ? r[r.length - 1].top : 0; // carga de referência vem do histórico
-        return { id: uid('e'), nome: nome, series: series, reps: reps, carga: ult };
+    modelo: function (id) {
+      var m = MODELOS.find(function (x) { return x.id === id; }); if (!m) return;
+      function e(x) {
+        var r = registrosDe(x[0]), ult = r.length ? r[r.length - 1].top : 0; // carga de referência vem do histórico
+        return { id: uid('e'), nome: x[0], series: x[1], reps: x[2], carga: ult };
       }
-      function t(letra, nome, exs) { return { id: uid('t'), letra: letra, nome: nome, exs: exs }; }
-      var p = { id: uid('p'), nome: 'Superior/Inferior', treinos: [
-        t('A', 'Superior 1', [e('Supino reto (barra)', 3, 10), e('Remada baixa (triângulo)', 3, 12), e('Supino inclinado (halteres)', 3, 12), e('Puxada frontal (pegada aberta)', 3, 12),
-          e('Elevação lateral', 3, 20), e('Face pull (corda)', 2, 20), e('Tríceps corda (polia)', 2, 15), e('Rosca direta (barra)', 2, 12)]),
-        t('B', 'Inferior 1 · posterior e glúteo', [e('Levantamento terra romeno', 3, 10), e('Elevação pélvica (barra)', 3, 12), e('Mesa flexora', 3, 12), e('Leg press 45°', 3, 12),
-          e('Panturrilha em pé (máquina)', 3, 15), e('Abdominal na polia (ajoelhado)', 3, 15)]),
-        t('C', 'Superior 2', [e('Desenvolvimento (halteres)', 3, 12), e('Barra fixa', 3, 10), e('Supino Declinado (máquina)', 3, 12), e('Remada unilateral (serrote)', 3, 12),
-          e('Crucifixo inverso (máquina)', 3, 20), e('Elevação lateral', 3, 20), e('Tríceps francês', 2, 15), e('Rosca Scott (máquina)', 2, 12)]),
-        t('D', 'Inferior 2 · quadríceps', [e('Leg press 45°', 3, 15), e('Cadeira extensora', 3, 15), e('Cadeira flexora', 3, 12), e('Cadeira abdutora', 2, 20),
-          e('Panturrilha sentada', 3, 15), e('Abdominal infra (elevação de pernas)', 3, 15)])
-      ] };
+      var p = { id: uid('p'), nome: m.nome, treinos: m.treinos.map(function (t, i) { return { id: uid('t'), letra: LETRAS[i], nome: t[0], exs: t[1].map(e) }; }) };
       D.programas.push(p); ui.editId = p.id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; marcarEdicao();
-      salvar(); mostrarToast('Divisão Superior/Inferior criada (A, B, C e D). As cargas de referência vieram do seu histórico. Toque em "Usar esta divisão" para começar pelo A.'); render();
+      salvar(); mostrarToast('Divisão "' + m.nome + '" criada. As cargas de referência vieram do seu histórico. Toque em "Usar esta divisão" para começar pelo A.'); render();
     },
     novaDivisao: function () {
       var t = { id: uid('t'), letra: 'A', nome: 'Novo treino', exs: [] };
@@ -1264,7 +1255,7 @@
     var noTreino = te.exs.map(function (x) { return x.nome; });
     return '<button type="button" class="link plain back" data-act="editor" data-arg="0">' + icon('back', 18) + 'Treinos</button>' +
       cabecalho('Editar treinos', 'Divisões, exercícios, séries e cargas.') +
-      '<section class="section"><h2 class="section-title">Divisões</h2><div class="chips">' + chips + '<button type="button" class="chip dashed" data-act="novaDivisao">' + icon('plus', 16) + 'Nova divisão</button>' + (D.programas.some(function (q) { return q.nome === 'Superior/Inferior'; }) ? '' : '<button type="button" class="chip dashed" data-act="modeloSI">' + icon('plus', 16) + 'Modelo superior/inferior (4×)</button>') + '</div>' +
+      '<section class="section"><h2 class="section-title">Divisões</h2><div class="chips">' + chips + '<button type="button" class="chip dashed" data-act="novaDivisao">' + icon('plus', 16) + 'Nova divisão</button>' + MODELOS.filter(function (m) { return !D.programas.some(function (q) { return q.nome === m.nome; }); }).map(function (m) { return '<button type="button" class="chip dashed" data-act="modelo" data-arg="' + m.id + '">' + icon('plus', 16) + 'Modelo: ' + esc(m.rotulo) + '</button>'; }).join('') + '</div>' +
       '<div class="card flat"><div class="field"><label for="nome-divisao">Nome da divisão</label><input id="nome-divisao" class="input" type="text" value="' + esc(ed.nome) + '" data-bind="progNome" enterkeyhint="done"></div>' +
       '<button type="button" class="btn ' + (emUso ? '' : 'primary') + ' block" data-act="usar"' + (emUso ? ' disabled' : '') + '>' + (emUso ? 'Esta é a divisão em uso' : 'Usar esta divisão') + '</button>' +
       (!emUso && D.programas.length > 1 ? '<button type="button" class="link" data-act="excluirDiv">Excluir esta divisão</button>' : '') + '</div></section>' +
@@ -1467,6 +1458,27 @@
     return gaveta('pesagens-antigas', 'Registros anteriores (OKOK e manuais)', plural(antigas.length, 'registro', 'registros'),
       '<p class="small muted">Ficam guardados, mas não entram nos gráficos: vêm de outro aparelho e de outro método de medição.</p><div class="section">' + antigas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
   }
+  /* divisões prontas: [nome do treino, [[exercício, séries, reps alvo], ...]] — criadas como divisão nova, sem tocar nas existentes */
+  var MODELOS = [
+    { id: 'abc2', nome: 'ABC ajustado', rotulo: 'ABC ajustado', treinos: [
+      ['Peito, ombro e tríceps', [['Supino reto (barra)', 3, 10], ['Supino inclinado (halteres)', 3, 12], ['Supino Declinado (máquina)', 3, 12], ['Desenvolvimento (halteres)', 3, 12],
+        ['Elevação lateral', 4, 12], ['Tríceps francês', 3, 12], ['Tríceps scott', 2, 12], ['Abdominal na polia (ajoelhado)', 3, 15]]],
+      ['Costas, bíceps e posterior', [['Barra fixa', 3, 10], ['Puxada frontal (pegada aberta)', 3, 12], ['Remada baixa (triângulo)', 3, 12], ['Crucifixo inverso (máquina)', 3, 15],
+        ['Rosca direta (barra)', 3, 12], ['Rosca alternada (halteres)', 2, 12], ['Levantamento terra romeno', 3, 10], ['Mesa flexora', 3, 12]]],
+      ['Pernas e abdômen', [['Leg press 45°', 4, 12], ['Cadeira extensora', 3, 12], ['Cadeira flexora', 3, 12], ['Elevação pélvica (barra)', 3, 12],
+        ['Cadeira abdutora', 2, 12], ['Panturrilha em pé (máquina)', 4, 12], ['Abdominal infra (elevação de pernas)', 3, 15]]]
+    ] },
+    { id: 'si', nome: 'Superior/Inferior', rotulo: 'superior/inferior (4×)', treinos: [
+      ['Superior 1', [['Supino reto (barra)', 3, 10], ['Remada baixa (triângulo)', 3, 12], ['Supino inclinado (halteres)', 3, 12], ['Puxada frontal (pegada aberta)', 3, 12],
+        ['Elevação lateral', 3, 20], ['Face pull (corda)', 2, 20], ['Tríceps corda (polia)', 2, 15], ['Rosca direta (barra)', 2, 12]]],
+      ['Inferior 1 · posterior e glúteo', [['Levantamento terra romeno', 3, 10], ['Elevação pélvica (barra)', 3, 12], ['Mesa flexora', 3, 12], ['Leg press 45°', 3, 12],
+        ['Panturrilha em pé (máquina)', 3, 15], ['Abdominal na polia (ajoelhado)', 3, 15]]],
+      ['Superior 2', [['Desenvolvimento (halteres)', 3, 12], ['Barra fixa', 3, 10], ['Supino Declinado (máquina)', 3, 12], ['Remada unilateral (serrote)', 3, 12],
+        ['Crucifixo inverso (máquina)', 3, 20], ['Elevação lateral', 3, 20], ['Tríceps francês', 2, 15], ['Rosca Scott (máquina)', 2, 12]]],
+      ['Inferior 2 · quadríceps', [['Leg press 45°', 3, 15], ['Cadeira extensora', 3, 15], ['Cadeira flexora', 3, 12], ['Cadeira abdutora', 2, 20],
+        ['Panturrilha sentada', 3, 15], ['Abdominal infra (elevação de pernas)', 3, 15]]]
+    ] }
+  ];
   var MD_CINTURA = { k: 'cintura', nome: 'Cintura', un: ' cm', casas: 1 };
   function secCintura() {
     var lista = cinturas(), por = {}, ordem = [];
