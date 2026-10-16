@@ -237,7 +237,7 @@
       var r = { subiu: 0, igual: 0, caiu: 0, comparados: 0 };
       h.exs.forEach(function (ex) {
         var t = topo(ex); if (!t) return;
-        var ant = ultimo[ex.nome];
+        var chave = String(ex.nome).toLowerCase().replace(/\s+/g, ' ').trim(), ant = ultimo[chave];
         if (ant) {
           var vol = ex.sets.reduce(function (s, x) { return s + x.carga * x.reps; }, 0);
           r.comparados++;
@@ -245,7 +245,7 @@
           else if (t.carga < ant.carga) r.caiu++;
           else r.igual++;
         }
-        ultimo[ex.nome] = { carga: t.carga, reps: t.reps, vol: ex.sets.reduce(function (s, x) { return s + x.carga * x.reps; }, 0) };
+        ultimo[chave] = { carga: t.carga, reps: t.reps, vol: ex.sets.reduce(function (s, x) { return s + x.carga * x.reps; }, 0) };
       });
       porSessao[h.id] = r;
     });

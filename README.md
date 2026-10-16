@@ -8,6 +8,8 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 3. O ícone **Treino** aparece na tela inicial e o app funciona sem internet.
 
 ## Como funciona o treino
+
+- Treinar › editar › "Modelo superior/inferior (4×)" cria a divisão A (superior 1), B (inferior 1, posterior e glúteo), C (superior 2) e D (inferior 2, quadríceps), com cargas de referência tiradas do histórico. A divisão ABC continua salva.
 1. Em **Treinar**, o app destaca o próximo treino pelo rodízio (A → B → C). Faltou ou a semana começou por outro treino? Toque na letra em **Próximo treino** para ajustar; depois do treino feito, o rodízio segue a partir dele.
 2. **Iniciar** abre a lista de exercícios do dia com uma sugestão de por onde começar. Aparelho ocupado? Escolha qualquer outro da lista.
 3. Na tela do exercício aparecem só as séries dele e a referência do histórico: última vez, recorde e se a carga subiu ou caiu. Campos vazios usam o valor em cinza ao marcar a série.
@@ -34,6 +36,7 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 - A fonte é a medição de composição corporal do relógio. No relógio, informe o peso da balança e meça; depois importe a exportação do Samsung Health. Todas as medições já feitas entram de uma vez, e importar de novo não duplica (cada medição tem o identificador do Samsung Health).
 - A aba Corpo mostra peso, massa muscular esquelética, gordura (%), massa de gordura, massa livre de gordura, água, IMC e metabolismo basal. Cada medida tem uma barra com a medição anterior como "sombra", além da variação. Os gráficos de peso, músculo e gordura usam o eixo de datas real e a média do dia quando há mais de uma medição.
 - Medições fora do padrão (antes das 5h ou a partir das 10h) ficam marcadas e fora das barras e dos gráficos; "Mostrar todas" inclui de volta, e cada medição pode ser corrigida à mão (Medições do relógio › abrir › Considerar dentro / Marcar como fora do padrão).
+- Cintura (fita): registro em centímetros na aba Corpo, com barra comparando com a medida anterior, gráfico e relação cintura/altura. Fica salvo junto das pesagens (origem "fita").
 - Pesagens antigas (manuais ou da balança por Bluetooth) ficam guardadas em "Registros anteriores", fora dos gráficos. A leitura da balança por Bluetooth foi removida na versão 2.3.
 - Lembrete: depois de 7 dias sem importar (mude para 14, 30 ou desligado em Ajustes), aparece um aviso no Início e no Corpo para sincronizar o relógio e importar.
 

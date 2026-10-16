@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.3.1';
+  var VERSAO_APP = '2.4.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -239,10 +239,14 @@
     return manual || proximoRodizio(p);
   }
 
+  /* "Tríceps francês " e "tríceps francês" são o mesmo exercício */
+  function chaveNome(n) { return semAcento(n).replace(/\s+/g, ' ').trim(); }
+  function mesmoNome(a, b) { return chaveNome(a) === chaveNome(b); }
+  function temNome(lista, n) { return lista.some(function (x) { return mesmoNome(x, n); }); }
   function registrosDe(nome) {
     var regs = [];
     vivos().forEach(function (h) {
-      var e = h.exs.find(function (x) { return x.nome === nome; });
+      var e = h.exs.find(function (x) { return mesmoNome(x.nome, nome); });
       if (e && e.sets.length) {
         var top = e.sets.reduce(function (a, x) { return x.carga > a.carga ? x : a; }, e.sets[0]);
         regs.push({ dia: h.dia, sets: e.sets, top: top.carga, topSet: top, volume: e.sets.reduce(function (a, x) { return a + x.carga * x.reps; }, 0) });
@@ -777,7 +781,7 @@
     var n = lembreteDias(), d = diasSemImportar();
     if (!n || d === null || d < n || D.perfil.lembreteAdiado === diaKey(new Date())) return '';
     return '<section class="notice lembrete-rel" role="status"><strong>Hora de sincronizar o relógio · ' + plural(d, 'dia', 'dias') + ' sem importar</strong>' +
-      '<ol class="passos small">' + (noCorpo ? '<li>Se for medir, faça a composição corporal no relógio, com o peso da balança.</li>' : '') +
+      '<ol class="passos small">' + (noCorpo ? '<li>Se for medir, faça a composição corporal no relógio, com o peso da balança, e meça a cintura.</li>' : '') +
       '<li>Abra o Samsung Health no celular e deixe o relógio sincronizar.</li><li>Menu › Configurações › Baixar dados pessoais.</li><li>Importe aqui o .zip ou os .csv.</li></ol>' +
       '<div class="row-actions"><button type="button" class="btn sm primary" data-act="importarRelogio">' + icon('upload', 16) + 'Importar agora</button><button type="button" class="btn sm ghost" data-act="lembreteHoje">Hoje não</button></div></section>';
   }
@@ -956,6 +960,25 @@
     excluirPeso: function (id) { abrirConfirm({ tipo: 'excluirPeso', alvo: id }); },
     editor: function (on) { ui.editor = on === '1'; ui.picker = false; render(); window.scrollTo(0, 0); },
     pickProg: function (id) { var p = D.programas.find(function (x) { return x.id === id; }); ui.editId = id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; render(); },
+    modeloSI: function () {
+      function e(nome, series, reps) {
+        var r = registrosDe(nome), ult = r.length ? r[r.length - 1].top : 0; // carga de referência vem do histórico
+        return { id: uid('e'), nome: nome, series: series, reps: reps, carga: ult };
+      }
+      function t(letra, nome, exs) { return { id: uid('t'), letra: letra, nome: nome, exs: exs }; }
+      var p = { id: uid('p'), nome: 'Superior/Inferior', treinos: [
+        t('A', 'Superior 1', [e('Supino reto (barra)', 3, 10), e('Remada baixa (triângulo)', 3, 12), e('Supino inclinado (halteres)', 3, 12), e('Puxada frontal (pegada aberta)', 3, 12),
+          e('Elevação lateral', 3, 20), e('Face pull (corda)', 2, 20), e('Tríceps corda (polia)', 2, 15), e('Rosca direta (barra)', 2, 12)]),
+        t('B', 'Inferior 1 · posterior e glúteo', [e('Levantamento terra romeno', 3, 10), e('Elevação pélvica (barra)', 3, 12), e('Mesa flexora', 3, 12), e('Leg press 45°', 3, 12),
+          e('Panturrilha em pé (máquina)', 3, 15), e('Abdominal na polia (ajoelhado)', 3, 15)]),
+        t('C', 'Superior 2', [e('Desenvolvimento (halteres)', 3, 12), e('Barra fixa', 3, 10), e('Supino Declinado (máquina)', 3, 12), e('Remada unilateral (serrote)', 3, 12),
+          e('Crucifixo inverso (máquina)', 3, 20), e('Elevação lateral', 3, 20), e('Tríceps francês', 2, 15), e('Rosca Scott (máquina)', 2, 12)]),
+        t('D', 'Inferior 2 · quadríceps', [e('Leg press 45°', 3, 15), e('Cadeira extensora', 3, 15), e('Cadeira flexora', 3, 12), e('Cadeira abdutora', 2, 20),
+          e('Panturrilha sentada', 3, 15), e('Abdominal infra (elevação de pernas)', 3, 15)])
+      ] };
+      D.programas.push(p); ui.editId = p.id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; marcarEdicao();
+      salvar(); mostrarToast('Divisão Superior/Inferior criada (A, B, C e D). As cargas de referência vieram do seu histórico. Toque em "Usar esta divisão" para começar pelo A.'); render();
+    },
     novaDivisao: function () {
       var t = { id: uid('t'), letra: 'A', nome: 'Novo treino', exs: [] };
       var p = { id: uid('p'), nome: 'Nova divisão', treinos: [t] };
@@ -1004,6 +1027,7 @@
       if (foraAgora === auto) m.padraoManual = foraAgora ? 'dentro' : 'fora'; else delete m.padraoManual; // volta ao automático quando coincide
       salvar(); render();
     },
+    registrarCintura: function () { registrarCintura(); },
     lembreteHoje: function () { D.perfil.lembreteAdiado = diaKey(new Date()); salvar(); render(); },
     lembreteDias: function (n) { D.perfil.lembreteDias = +n; salvar(); render(); },
     relMes: function (d) { var m = mesesComDados(), i = m.indexOf(ui.relMes) + (+d); if (i >= 0 && i < m.length) { ui.relMes = m[i]; render(); } },
@@ -1240,7 +1264,7 @@
     var noTreino = te.exs.map(function (x) { return x.nome; });
     return '<button type="button" class="link plain back" data-act="editor" data-arg="0">' + icon('back', 18) + 'Treinos</button>' +
       cabecalho('Editar treinos', 'Divisões, exercícios, séries e cargas.') +
-      '<section class="section"><h2 class="section-title">Divisões</h2><div class="chips">' + chips + '<button type="button" class="chip dashed" data-act="novaDivisao">' + icon('plus', 16) + 'Nova divisão</button></div>' +
+      '<section class="section"><h2 class="section-title">Divisões</h2><div class="chips">' + chips + '<button type="button" class="chip dashed" data-act="novaDivisao">' + icon('plus', 16) + 'Nova divisão</button>' + (D.programas.some(function (q) { return q.nome === 'Superior/Inferior'; }) ? '' : '<button type="button" class="chip dashed" data-act="modeloSI">' + icon('plus', 16) + 'Modelo superior/inferior (4×)</button>') + '</div>' +
       '<div class="card flat"><div class="field"><label for="nome-divisao">Nome da divisão</label><input id="nome-divisao" class="input" type="text" value="' + esc(ed.nome) + '" data-bind="progNome" enterkeyhint="done"></div>' +
       '<button type="button" class="btn ' + (emUso ? '' : 'primary') + ' block" data-act="usar"' + (emUso ? ' disabled' : '') + '>' + (emUso ? 'Esta é a divisão em uso' : 'Usar esta divisão') + '</button>' +
       (!emUso && D.programas.length > 1 ? '<button type="button" class="link" data-act="excluirDiv">Excluir esta divisão</button>' : '') + '</div></section>' +
@@ -1267,25 +1291,25 @@
 
   /* --- Evolução --- */
   function nomesComHistorico() {
-    var set = {}; vivos().forEach(function (h) { h.exs.forEach(function (x) { set[x.nome] = true; }); });
-    return Object.keys(set);
+    var set = {}; vivos().forEach(function (h) { h.exs.forEach(function (x) { set[chaveNome(x.nome)] = x.nome.replace(/\s+/g, ' ').trim(); }); });
+    return Object.keys(set).map(function (k) { return set[k]; });
   }
   function vEvolucao() {
     var seq = sequencia(D.regra), nomes = nomesComHistorico(), p = ativo();
     var html = cabecalho('Evolução', 'Relatório do mês, cargas, frequência e recordes.') + toastHtml();
     html += relatorioHtml();
     if (!vivos().length) return html + '<section class="vazio card flat"><strong>Ainda sem treinos registrados</strong><span class="small muted">Os gráficos aparecem depois do primeiro treino finalizado.</span><button type="button" class="btn primary" data-act="ir" data-arg="treinar">Ir para Treinar</button></section>' + calendarioHtml(seq);
-    if (!ui.evoEx || nomes.indexOf(ui.evoEx) < 0) {
-      var prim = null; p.treinos.some(function (t) { return t.exs.some(function (x) { if (nomes.indexOf(x.nome) >= 0) { prim = x.nome; return true; } return false; }); });
+    if (!ui.evoEx || !temNome(nomes, ui.evoEx)) {
+      var prim = null; p.treinos.some(function (t) { return t.exs.some(function (x) { if (temNome(nomes, x.nome)) { prim = x.nome.trim(); return true; } return false; }); });
       ui.evoEx = prim || nomes[0];
     }
     var grupos = p.treinos.map(function (t) {
-      var ops = t.exs.filter(function (x) { return nomes.indexOf(x.nome) >= 0; }).map(function (x) { return '<option' + (x.nome === ui.evoEx ? ' selected' : '') + '>' + esc(x.nome) + '</option>'; }).join('');
+      var ops = t.exs.filter(function (x) { return temNome(nomes, x.nome); }).map(function (x) { return '<option' + (mesmoNome(x.nome, ui.evoEx) ? ' selected' : '') + '>' + esc(x.nome.trim()) + '</option>'; }).join('');
       return ops ? '<optgroup label="Treino ' + esc(t.letra) + ' · ' + esc(t.nome) + '">' + ops + '</optgroup>' : '';
     }).join('');
-    var naDivisao = {}; p.treinos.forEach(function (t) { t.exs.forEach(function (x) { naDivisao[x.nome] = true; }); });
-    var outros = nomes.filter(function (n) { return !naDivisao[n]; }).sort();
-    if (outros.length) grupos += '<optgroup label="Outros">' + outros.map(function (n) { return '<option' + (n === ui.evoEx ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</optgroup>';
+    var naDivisao = {}; p.treinos.forEach(function (t) { t.exs.forEach(function (x) { naDivisao[chaveNome(x.nome)] = true; }); });
+    var outros = nomes.filter(function (n) { return !naDivisao[chaveNome(n)]; }).sort();
+    if (outros.length) grupos += '<optgroup label="Outros">' + outros.map(function (n) { return '<option' + (mesmoNome(n, ui.evoEx) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</optgroup>';
 
     var regs = registrosDe(ui.evoEx), ref = refEx(ui.evoEx), modo = ui.evoModo;
     var pontos = regs.map(function (r) { return { x: ddmm(r.dia), y: modo === 'carga' ? r.top : Math.round(r.volume), dica: ddmm(r.dia) + (modo === 'carga' ? ' · ' + kg(r.topSet.carga) + ' kg × ' + r.topSet.reps : ' · ' + plural(r.sets.length, 'série', 'séries')) }; });
@@ -1342,7 +1366,7 @@
     var letras = []; todos.forEach(function (h) { if (letras.indexOf(h.letra) < 0) letras.push(h.letra); }); letras.sort();
     var nomes = nomesComHistorico().sort();
     if (ui.filtroEx && nomes.indexOf(ui.filtroEx) < 0) ui.filtroEx = '';
-    var lista = todos.filter(function (h) { return (!ui.filtroLetra || h.letra === ui.filtroLetra) && (!ui.filtroEx || h.exs.some(function (x) { return x.nome === ui.filtroEx; })); });
+    var lista = todos.filter(function (h) { return (!ui.filtroLetra || h.letra === ui.filtroLetra) && (!ui.filtroEx || h.exs.some(function (x) { return mesmoNome(x.nome, ui.filtroEx); })); });
     var filtros = '<div class="filtros"><div class="chips" role="group" aria-label="Filtrar por treino"><button type="button" class="chip sm-chip" aria-pressed="' + !ui.filtroLetra + '" data-act="filtroLetra" data-arg="">Todos</button>' +
       letras.map(function (l) { return '<button type="button" class="chip sm-chip" aria-pressed="' + (ui.filtroLetra === l) + '" data-act="filtroLetra" data-arg="' + esc(l) + '">' + esc(l) + '</button>'; }).join('') + '</div>' +
       '<div class="field"><label for="f-ex" class="sr-only">Filtrar por exercício</label><select id="f-ex" class="input" data-change="filtroEx"><option value="">Todos os exercícios</option>' + nomes.map(function (n) { return '<option' + (n === ui.filtroEx ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div></div>';
@@ -1354,7 +1378,7 @@
       var aberto = !!ui.abertoHist[h.id];
       html += '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirHist" data-arg="' + h.id + '"><span class="mini" aria-hidden="true">' + esc(h.letra) + '</span><span class="mid"><b>Treino ' + esc(h.letra) + ' · ' + esc(h.nome) + '</b><span class="small muted">' + h.duracao + ' min · ' + plural(n, 'série', 'séries') + ' · ' + Math.round(vol).toLocaleString('pt-BR') + ' kg' + (h.preTreino ? ' · pré-treino' : '') + '</span></span>' +
         '<span class="dt">' + esc(deKey(h.dia).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
-        (aberto ? '<div class="sess-det">' + h.exs.map(function (x) { return '<div class="ex' + (x.nome === ui.filtroEx ? ' destaque' : '') + '"><b>' + esc(x.nome) + '</b><span>' + x.sets.map(function (y) { return kg(y.carga) + '×' + y.reps; }).join('  ·  ') + '</span></div>'; }).join('') +
+        (aberto ? '<div class="sess-det">' + h.exs.map(function (x) { return '<div class="ex' + (ui.filtroEx && mesmoNome(x.nome, ui.filtroEx) ? ' destaque' : '') + '"><b>' + esc(x.nome) + '</b><span>' + x.sets.map(function (y) { return kg(y.carga) + '×' + y.reps; }).join('  ·  ') + '</span></div>'; }).join('') +
           '<div class="row-actions"><button type="button" class="btn sm" aria-pressed="' + !!h.preTreino + '" data-act="histPre" data-arg="' + h.id + '">' + (h.preTreino ? 'Tirar marca de pré-treino' : 'Marcar: usei pré-treino') + '</button></div>' +
           '<button type="button" class="link" data-act="excluirHist" data-arg="' + h.id + '">Excluir este registro</button></div>' : '') + '</article>';
     });
@@ -1374,7 +1398,8 @@
     return h < JANELA.ini || h >= JANELA.fim;
   }
   function verTodas() { return !!D.perfil.corpoTodas; }
-  function pesagensAntigas() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem !== 'samsung'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
+  function cinturas() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem === 'fita' && p.cintura; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
+  function pesagensAntigas() { return D.pesagens.filter(function (p) { return !p.apagado && p.origem !== 'samsung' && p.origem !== 'fita'; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
   /* um ponto por dia: média das medições do dia (duas medições seguidas costumam variar 1–3 p.p.) */
   function diasCorpo() {
     var por = {}, ordem = [];
@@ -1422,6 +1447,11 @@
     var dt = new Date(p.data), aberto = ui.abertoPeso === p.id, extras;
     if (p.origem === 'samsung') extras = MEDIDAS.filter(function (md) { return md.k !== 'peso' && md.k !== 'imc' && p[md.k] != null; }).map(function (md) { return '<div><span class="muted small">' + esc(md.nome) + '</span><b>' + kg(p[md.k], md.casas) + esc(md.un) + '</b></div>'; }).join('');
     else extras = [['gordura', 'Gordura', '%'], ['musculo', 'Massa muscular', ' kg'], ['agua', 'Água', '%']].filter(function (x) { return p[x[0]] != null; }).map(function (x) { return '<div><span class="muted small">' + x[1] + '</span><b>' + kg(p[x[0]], 1) + x[2] + '</b></div>'; }).join('');
+    if (p.origem === 'fita') {
+      var dtf = new Date(p.data);
+      return '<div class="list-row"><div><span class="nome">' + kg(p.cintura, 1) + ' cm</span><span class="small muted">' + dtf.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + pad(dtf.getHours()) + ':' + pad(dtf.getMinutes()) + '</span></div>' +
+        '<button type="button" class="icon-btn sm" aria-label="Excluir medida de ' + kg(p.cintura, 1) + ' cm" data-act="excluirPeso" data-arg="' + esc(p.id) + '">' + icon('trash', 18) + '</button></div>';
+    }
     var resumo = kg(p.peso, 1) + ' kg' + (p.gordura != null ? ' · ' + kg(p.gordura, 1) + '%' : p.origem === 'samsung' ? ' · só peso' : '');
     var fora = p.origem === 'samsung' && foraDoPadrao(p);
     return '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirPeso" data-arg="' + esc(p.id) + '"><span class="mini peso" aria-hidden="true">' + icon('body', 18) + '</span><span class="mid"><b>' + esc(resumo) + '</b><span class="small muted">' + (p.origem === 'samsung' ? 'Galaxy Watch' : p.origem === 'balanca' ? 'Balança (Bluetooth)' : 'Manual') + (fora ? ' · <span class="tag-fora">fora do padrão</span>' : '') + '</span></span>' +
@@ -1437,6 +1467,38 @@
     return gaveta('pesagens-antigas', 'Registros anteriores (OKOK e manuais)', plural(antigas.length, 'registro', 'registros'),
       '<p class="small muted">Ficam guardados, mas não entram nos gráficos: vêm de outro aparelho e de outro método de medição.</p><div class="section">' + antigas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
   }
+  var MD_CINTURA = { k: 'cintura', nome: 'Cintura', un: ' cm', casas: 1 };
+  function secCintura() {
+    var lista = cinturas(), por = {}, ordem = [];
+    lista.forEach(function (m) { var k = m.data.slice(0, 10); if (!por[k]) { por[k] = []; ordem.push(k); } por[k].push(m.cintura); });
+    var serie = ordem.map(function (k) { return { dia: k, n: por[k].length, cintura: por[k].reduce(function (a, b) { return a + b; }, 0) / por[k].length }; });
+    var campo = '<div class="cint-form"><div class="field tight"><label for="cintura-cm">Cintura hoje (cm)</label><input id="cintura-cm" class="input" type="text" inputmode="decimal" autocomplete="off" placeholder="ex.: 88,5" enterkeyhint="done"></div>' +
+      '<button type="button" class="btn primary" data-act="registrarCintura">Registrar</button></div><p class="small erro-txt" id="cint-erro" role="alert" hidden></p>';
+    var como = '<span class="small muted">Na altura do umbigo, de manhã em jejum, no fim de uma expiração normal, com a fita reta e sem apertar. Uma vez por semana, junto com a medição do relógio.</span>';
+    var corpo = '';
+    if (serie.length) {
+      var ult = serie[serie.length - 1], alt = num(D.perfil.altura) || 0;
+      medidasRelogio().forEach(function (m) { if (m.altura) alt = m.altura; });
+      var rc = alt > 50 ? ult.cintura / alt : null;
+      corpo = barraCorpo(MD_CINTURA, serie) +
+        (rc ? '<span class="small muted">Relação cintura/altura: <b>' + kg(rc, 2) + '</b> — ' + (rc < 0.5 ? 'abaixo de 0,50, a faixa associada a menor risco metabólico' : 'acima de 0,50; abaixo disso é a faixa associada a menor risco metabólico') + '.</span>' : '');
+      if (serie.length >= 2) {
+        var pts = serie.map(function (d) { return { x: ddmm(d.dia), t: deKey(d.dia).getTime(), y: Math.round(d.cintura * 10) / 10, dica: deKey(d.dia).toLocaleDateString('pt-BR') }; });
+        corpo += window.Graficos.registrar('corpo-cint', { tipo: 'linha', titulo: 'Cintura', pontos: pts, fmtY: function (v) { return kg(v, 1) + ' cm'; }, fmtEixo: function (v) { return kg(v, 1); }, altura: 160, colunas: ['Data', 'Cintura (cm)'] });
+      }
+      corpo += gaveta('cinturas', 'Medidas de cintura', plural(lista.length, 'registro', 'registros'), '<div class="list">' + lista.slice().reverse().map(itemPesagem).join('') + '</div>', false);
+    }
+    return '<section class="section card flat" aria-labelledby="cint-t"><h2 class="section-title" id="cint-t">Cintura (fita)</h2>' + corpo + campo + como + '</section>';
+  }
+  function registrarCintura() {
+    var el = document.getElementById('cintura-cm'), er = document.getElementById('cint-erro');
+    var v = numOuNada(el ? el.value : '');
+    if (!v || v < 40 || v > 200) { if (er) { er.textContent = 'Informe a cintura em centímetros (ex.: 88,5).'; er.hidden = false; } if (el) el.focus(); return; }
+    var r = { id: uid('w'), data: agoraLocalISO(), cintura: Math.round(v * 10) / 10, origem: 'fita' };
+    D.pesagens.push(r); salvar();
+    if (el) el.blur();
+    mostrarToast('Cintura de ' + kg(r.cintura, 1) + ' cm registrada.'); render();
+  }
   function vCorpo() {
     var html = cabecalho('Corpo', 'Composição corporal medida pelo Galaxy Watch.') + toastHtml() + avisoRelogio(true);
     var serie = diasCorpo(), medidas = medidasRelogio();
@@ -1450,7 +1512,7 @@
     }
     if (!serie.length) {
       return html + '<section class="vazio card flat"><strong>Nenhuma medição do relógio ainda</strong><span class="small muted">No relógio, abra Composição corporal, informe o peso da balança e faça a medição. Depois exporte no Samsung Health (menu › Configurações › Baixar dados pessoais) e importe aqui: vêm todas as medições já feitas.</span>' +
-        '<button type="button" class="btn primary" data-act="importarRelogio">' + icon('upload', 18) + 'Importar do Samsung Health</button></section>' + gavetaAntigas();
+        '<button type="button" class="btn primary" data-act="importarRelogio">' + icon('upload', 18) + 'Importar do Samsung Health</button></section>' + secCintura() + gavetaAntigas();
     }
     var comBia = serie.filter(function (d) { return d.gordura != null; });
     var ref = comBia.length ? comBia[comBia.length - 1] : serie[serie.length - 1];
@@ -1484,7 +1546,7 @@
       '<div class="stats3">' + trio.map(mudanca).join('') + '</div>' + graficos +
       '<span class="small muted">Para a comparação valer, meça sempre nas mesmas condições: de manhã (entre ' + JANELA.ini + 'h e ' + JANELA.fim + 'h), em jejum, depois de ir ao banheiro e antes de treinar. A bioimpedância erra de 3 a 5 p.p. no valor absoluto; o que importa é a tendência.</span></section>';
     var lista = gaveta('medicoes', 'Medições do relógio', plural(medidas.length, 'registro', 'registros'), '<div class="section">' + medidas.slice().reverse().map(itemPesagem).join('') + '</div>', false);
-    return html + secAtual + secEvo + lista + gavetaAntigas();
+    return html + secAtual + secCintura() + secEvo + lista + gavetaAntigas();
   }
 
   /* --- Ajustes --- */
@@ -1670,6 +1732,7 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && ui.confirm) { fecharConfirm(false); return; }
+    if (e.key === 'Enter' && e.target.id === 'cintura-cm') { e.preventDefault(); registrarCintura(); return; }
     if (e.key === 'Enter' && e.target.id === 'ex-custom') { e.preventDefault(); A.escolherEx(''); return; }
     if (e.key === 'Enter' && e.target.matches && e.target.matches('#view input[type="text"]')) e.target.blur();
   });
