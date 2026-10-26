@@ -551,3 +551,10 @@ textarea.input { height: auto; padding: 10px; font-size: 13px; font-weight: 500;
 .tag-fora { color: var(--warn); font-weight: 600; }
 .cint-form { display: flex; align-items: flex-end; gap: 10px; }
 .cint-form .field { flex: 1; min-width: 0; }
+
+/* ---------- v2.5: meta semanal, medalhas por semanas, seletor de grupo ---------- */
+.medals { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 10px; }
+.segmented.seis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.day.sem-ok:not(.seq):not(.futuro) { box-shadow: inset 0 -3px 0 var(--accent); }
+.sheet .field.grupos { display: flex; flex-direction: column; flex-wrap: wrap; overflow: visible; padding-bottom: 0; }
+.sheet .field.grupos select { min-height: 48px; font-size: 16px; }

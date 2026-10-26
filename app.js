@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.4.1';
+  var VERSAO_APP = '2.5.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -45,7 +45,8 @@
     for (var i = 0; i < REGRAS_GRUPO.length; i++) if (REGRAS_GRUPO[i][0].test(n)) return REGRAS_GRUPO[i][1];
     return 'Outros';
   }
-  var MEDALHAS = [{ n: 3, nome: 'Largada' }, { n: 5, nome: 'Ritmo' }, { n: 7, nome: 'Semana cheia' }, { n: 12, nome: 'Imparável' }, { n: 20, nome: 'Lenda do mês' }];
+  /* medalhas por semanas seguidas com a meta semanal cumprida */
+  var MEDALHAS = [{ n: 1, nome: 'Largada' }, { n: 2, nome: 'Ritmo' }, { n: 4, nome: 'Um mês' }, { n: 8, nome: 'Dois meses' }, { n: 12, nome: 'Trimestre' }, { n: 26, nome: 'Semestre' }, { n: 52, nome: 'Um ano' }];
   /* composição corporal do Galaxy Watch, na ordem da tela do Samsung Health */
   var MEDIDAS = [
     { k: 'peso', nome: 'Peso', un: ' kg', casas: 1 },
@@ -154,6 +155,7 @@
   function normalizar(d) {
     d.v = 1;
     d.regra = d.regra === 'estrita' ? 'estrita' : 'descanso';
+    d.metaSemanal = d.metaSemanal >= 1 && d.metaSemanal <= 7 ? Math.round(d.metaSemanal) : 5;
     d.tema = ['claro', 'escuro', 'auto'].indexOf(d.tema) >= 0 ? d.tema : 'escuro';
     if (!Array.isArray(d.pesagens)) d.pesagens = [];
     if (!Array.isArray(d.saude)) d.saude = []; // resumo diário do relógio (Samsung Health), um item por dia
@@ -213,7 +215,13 @@
     agendarEnvio();
   }
 
-  function vivos() { return D.historico.filter(function (h) { return !h.apagado; }).sort(function (a, b) { return a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0; }); }
+  /* momento da sessão: horário de término (desde a 2.5) ou o de início, que está no próprio id */
+  function momento(h) {
+    if (h.fim) return h.fim;
+    var t = h.id && h.id.length > 7 ? parseInt(h.id.slice(1, -5), 36) : 0;
+    return isFinite(t) ? t : 0;
+  }
+  function vivos() { return D.historico.filter(function (h) { return !h.apagado; }).sort(function (a, b) { return a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : momento(a) - momento(b); }); }
   function pesagensVivas() { return D.pesagens.filter(function (p) { return !p.apagado; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
   function acharTreinoEm(progs, id) {
     for (var i = 0; i < progs.length; i++) for (var j = 0; j < progs[i].treinos.length; j++) if (progs[i].treinos[j].id === id) return progs[i].treinos[j];
@@ -226,13 +234,22 @@
   function marcarEdicao() { D.editado = true; }
 
   /* ---------- regras do treino ---------- */
-  function proximoRodizio(p) {
+  function ultimaDoRodizio(p) {
     var h = vivos();
     for (var i = h.length - 1; i >= 0; i--) {
       var ix = p.treinos.findIndex(function (t) { return t.id === h[i].treinoId; });
-      if (ix >= 0) return p.treinos[(ix + 1) % p.treinos.length];
+      if (ix >= 0) return { h: h[i], ix: ix };
+      var dono = D.programas.find(function (q) { return q.treinos.some(function (t) { return t.id === h[i].treinoId; }); });
+      if (!dono || dono.treinos.length === p.treinos.length) { // treino de divisão apagada ou equivalente: segue pela letra
+        var il = p.treinos.findIndex(function (t) { return t.letra === h[i].letra; });
+        if (il >= 0) return { h: h[i], ix: il };
+      }
     }
-    return p.treinos[0];
+    return null;
+  }
+  function proximoRodizio(p) {
+    var u = ultimaDoRodizio(p);
+    return u ? p.treinos[(u.ix + 1) % p.treinos.length] : p.treinos[0];
   }
   function proximoTreino(p) {
     var manual = p.proximoId && p.treinos.find(function (t) { return t.id === p.proximoId; });
@@ -266,38 +283,51 @@
     if (dif < 0) return '<span class="trend down">' + icon('down', 14) + '−' + kg(-dif) + ' kg</span>';
     return '<span class="trend eq">' + icon('equal', 14) + 'mesma carga</span>';
   }
+  function refSerie(ref, j) {
+    if (!ref || !ref.ult.sets.length) return null;
+    var ss = ref.ult.sets;
+    return ss[j] || ss[ss.length - 1]; // série a mais que da última vez: usa a última feita, não a maior
+  }
   function placeholderCarga(ex, j, ref) {
-    if (ref) { var s = ref.ult.sets[j] || ref.topSet; return virgula(s.carga); }
+    var r = refSerie(ref, j);
+    if (r) return virgula(r.carga);
     return ex.carga ? virgula(ex.carga) : '';
   }
+  function placeholderReps(ex, j, ref) {
+    var r = refSerie(ref, j);
+    return r && r.reps ? String(r.reps) : String(ex.reps);
+  }
 
-  /* Sequência do mês. Regra "descanso": até 2 dias sem treino seguidos não quebram; o 3º quebra. */
-  function sequencia(regra) {
-    var hoje = new Date();
-    var Y = hoje.getFullYear(), M = hoje.getMonth(), Dd = hoje.getDate();
-    var feitos = {};
-    vivos().forEach(function (h) { feitos[h.dia] = true; });
-    function T(d) { return !!feitos[diaKey(new Date(Y, M, d))]; }
-    var estrita = regra === 'estrita';
-    var run = 0, gap = 0, melhor = 0, ate = [0], dias = 0, inicioRun = 0, inicios = [0];
-    for (var d = 1; d <= Dd; d++) {
-      if (T(d)) { if (run === 0) inicioRun = d; run++; gap = 0; dias++; } else { gap++; if (estrita || gap >= 3) run = 0; }
-      if (run > melhor) melhor = run;
-      ate[d] = run; inicios[d] = inicioRun;
+  /* Sequência por semanas (segunda a domingo). Uma semana conta quando tem pelo menos "meta" dias treinados.
+     A semana atual só entra na sequência quando a meta é batida; enquanto não acaba, não quebra nada. */
+  function semanaDe(d) { return addDias(d, -((d.getDay() + 6) % 7)); }
+  function sequencia() {
+    var meta = D.metaSemanal || 5, hoje = new Date(), segAtual = semanaDe(hoje), kAtual = diaKey(segAtual);
+    var feitos = {}, porSemana = {};
+    vivos().forEach(function (h) {
+      if (feitos[h.dia]) return;
+      feitos[h.dia] = true;
+      var k = diaKey(semanaDe(deKey(h.dia)));
+      porSemana[k] = (porSemana[k] || 0) + 1;
+    });
+    var dias = Object.keys(feitos).sort(), run = 0, melhor = 0, okSemana = {};
+    if (dias.length) {
+      for (var w = semanaDe(deKey(dias[0])); diaKey(w) < kAtual; w = addDias(w, 7)) {
+        var kw = diaKey(w), ok = (porSemana[kw] || 0) >= meta;
+        okSemana[kw] = ok; run = ok ? run + 1 : 0; if (run > melhor) melhor = run;
+      }
     }
-    var hojeFeito = T(Dd);
-    var refDia = estrita && !hojeFeito ? Dd - 1 : Dd;
-    var atual = refDia >= 1 ? ate[refDia] : 0;
-    var naSequencia = {};
-    if (atual > 0) for (var k = inicios[refDia]; k <= refDia; k++) if (T(k)) naSequencia[diaKey(new Date(Y, M, k))] = true;
+    var nAtual = porSemana[kAtual] || 0, batida = nAtual >= meta;
+    okSemana[kAtual] = batida;
+    var atual = run + (batida ? 1 : 0); if (atual > melhor) melhor = atual;
+    var dow = (hoje.getDay() + 6) % 7, hojeFeito = !!feitos[diaKey(hoje)];
+    var diasLivres = 7 - dow - (hojeFeito ? 1 : 0), faltam = Math.max(0, meta - nAtual);
     var status;
-    if (hojeFeito) status = 'Treino de hoje registrado.';
-    else if (atual > 0) {
-      if (estrita) status = 'Treine hoje para manter a sequência.';
-      else if (gap === 1) status = 'Descanso 1 de 2: pode descansar hoje e amanhã.';
-      else status = 'Descanso 2 de 2: treine amanhã para manter a sequência.';
-    } else status = 'Treine hoje para começar uma sequência.';
-    return { atual: atual, melhor: melhor, dias: dias, status: status, feitos: feitos, naSequencia: naSequencia, Y: Y, M: M, D: Dd };
+    if (batida) status = 'Meta da semana batida (' + nAtual + ' de ' + meta + ').';
+    else if (faltam <= diasLivres) status = 'Esta semana: ' + nAtual + ' de ' + meta + '. Faltam ' + plural(faltam, 'treino', 'treinos') + ' em ' + plural(diasLivres, 'dia', 'dias') + '.';
+    else status = 'Esta semana: ' + nAtual + ' de ' + meta + '. Não dá mais para bater a meta; a sequência recomeça na próxima semana.';
+    return { atual: atual, melhor: melhor, meta: meta, nSemana: nAtual, batida: batida, status: status, feitos: feitos, okSemana: okSemana,
+      Y: hoje.getFullYear(), M: hoje.getMonth(), D: hoje.getDate() };
   }
 
   /* ---------- sessão em andamento ---------- */
@@ -333,7 +363,7 @@
     if (!t) { D.sessao = null; salvar(); render(); return; }
     var total = 0;
     var p = D.programas.find(function (pp) { return pp.treinos.indexOf(t) >= 0; });
-    var reg = { id: s.id, dia: diaKey(new Date()), treinoId: t.id, letra: t.letra, nome: t.nome, divisao: p ? p.nome : '', duracao: Math.max(1, Math.round((Date.now() - s.inicio) / 60000)), exs: [] };
+    var reg = { id: s.id, dia: diaKey(new Date()), fim: Date.now(), treinoId: t.id, letra: t.letra, nome: t.nome, divisao: p ? p.nome : '', duracao: Math.max(1, Math.round((Date.now() - s.inicio) / 60000)), exs: [] };
     if (s.preTreino) reg.preTreino = true;
     s.ordem.forEach(function (i) {
       var ex = s.exs[i];
@@ -346,22 +376,23 @@
     });
     if (!total) return;
     if (p) p.proximoId = null;
-    var antes = sequencia(D.regra);
+    var antes = sequencia();
     var ix = D.historico.findIndex(function (h) { return h.id === reg.id; });
     if (ix >= 0) D.historico[ix] = reg; else D.historico.push(reg); // mesmo id: nunca duplica
-    var depois = sequencia(D.regra);
+    var depois = sequencia();
     var novas = MEDALHAS.filter(function (m) { return antes.melhor < m.n && depois.melhor >= m.n; });
     D.sessao = null;
     salvar();
     liberarTela();
-    var msg = 'Treino ' + t.letra + ' salvo · ' + plural(total, 'série', 'séries') + ' · sequência de ' + plural(depois.atual, 'dia', 'dias') + '.';
+    var msg = 'Treino ' + t.letra + ' salvo · ' + plural(total, 'série', 'séries') + ' · semana: ' + depois.nSemana + ' de ' + depois.meta + '.';
+    if (depois.batida && !antes.batida) msg += ' Meta da semana batida: ' + plural(depois.atual, 'semana seguida', 'semanas seguidas') + '.';
     if (novas.length) msg += ' Medalha "' + novas[novas.length - 1].nome + '" conquistada!';
     mostrarToast(msg);
     irPara('inicio', false);
   }
 
   /* ---------- nuvem: sincronização ---------- */
-  function cfgDe() { return { programas: D.programas, ativoId: D.ativoId, regra: D.regra }; }
+  function cfgDe() { return { programas: D.programas, ativoId: D.ativoId, regra: D.regra, metaSemanal: D.metaSemanal }; }
   function prefsDe() { return { tema: D.tema, gavetas: D.gavetas, ultimoBackup: D.ultimoBackup || null, perfil: D.perfil }; }
   function semMeta(o) { var c = clone(o); delete c.atualizadoEm; delete c.dispositivo; delete c.atual; delete c.ativo; delete c.aviso; return c; }
   function liveParaNuvem(s) { var c = clone(s); c.sets = c.sets.map(function (a) { return { s: a }; }); c.atual = null; delete c.aviso; return c; } // Firestore não aceita lista dentro de lista
@@ -454,7 +485,7 @@
     sync.parar = window.Nuvem.escutar(u.uid, {
       config: function (d) {
         if (d && (d.atualizadoEm || 0) > (D.configEm || 0)) {
-          D.programas = d.programas; D.ativoId = d.ativoId; D.regra = d.regra || D.regra; D.configEm = d.atualizadoEm;
+          D.programas = d.programas; D.ativoId = d.ativoId; D.regra = d.regra || D.regra; D.metaSemanal = d.metaSemanal || D.metaSemanal; D.configEm = d.atualizadoEm;
           normalizar(D); sync.ultimo.config = JSON.stringify(cfgDe()); gravarLocal(); renderSeguro();
         } else if (d && d.atualizadoEm === D.configEm) sync.ultimo.config = JSON.stringify(cfgDe());
         agendarEnvio();
@@ -524,7 +555,7 @@
   }
 
   function adotarRemoto(r) {
-    if (r.config) { D.programas = r.config.programas; D.ativoId = r.config.ativoId; D.regra = r.config.regra || D.regra; D.configEm = r.config.atualizadoEm; }
+    if (r.config) { D.programas = r.config.programas; D.ativoId = r.config.ativoId; D.regra = r.config.regra || D.regra; D.metaSemanal = r.config.metaSemanal || D.metaSemanal; D.configEm = r.config.atualizadoEm; }
     if (r.prefs) { D.tema = r.prefs.tema || D.tema; D.gavetas = r.prefs.gavetas || {}; D.perfil = r.prefs.perfil || {}; D.ultimoBackup = r.prefs.ultimoBackup || D.ultimoBackup; D.prefsEm = r.prefs.atualizadoEm; }
     var saudeLocal = D.saude || [];
     D.historico = r.sessions.slice(); D.pesagens = r.weights.slice(); D.saude = (r.health || []).slice();
@@ -572,10 +603,10 @@
       adotarRemoto(r); vincular();
       mostrarToast('Mantidos os dados da nuvem (' + plural(vivos().length, 'treino', 'treinos') + '). O backup deste aparelho foi baixado.');
     } else if (opcao === 'juntar') {
-      var cfgLocal = { programas: D.programas, ativoId: D.ativoId, regra: D.regra, em: D.configEm || 0 };
+      var cfgLocal = { programas: D.programas, ativoId: D.ativoId, regra: D.regra, metaSemanal: D.metaSemanal, em: D.configEm || 0 };
       var hist = D.historico.slice(), pes = D.pesagens.slice();
       adotarRemoto(r);
-      if (!r.config || cfgLocal.em > (r.config.atualizadoEm || 0)) { D.programas = cfgLocal.programas; D.ativoId = cfgLocal.ativoId; D.regra = cfgLocal.regra; sync.ultimo.config = null; }
+      if (!r.config || cfgLocal.em > (r.config.atualizadoEm || 0)) { D.programas = cfgLocal.programas; D.ativoId = cfgLocal.ativoId; D.regra = cfgLocal.regra; D.metaSemanal = cfgLocal.metaSemanal; sync.ultimo.config = null; }
       mesclarLocalSobre(D.historico, hist, sync.ultimo.s);
       mesclarLocalSobre(D.pesagens, pes, sync.ultimo.w);
       normalizar(D); gravarLocal(); vincular();
@@ -875,7 +906,7 @@
       var ex = D.sessao.exs[i];
       if (!x.ok) {
         if (x.carga === '') x.carga = placeholderCarga(ex, j, refEx(ex.nome));
-        if (x.reps === '') x.reps = String(ex.reps);
+        if (x.reps === '') x.reps = placeholderReps(ex, j, refEx(ex.nome));
       }
       x.ok = !x.ok; salvar(); render();
     },
@@ -908,7 +939,7 @@
       var pend = s.exs.filter(function (ex, i) { return !seriesOk(i); }).length;
       if (pend) abrirConfirm({ tipo: 'finalizarParcial', pend: pend }); else finalizar();
     },
-    sessAdicionar: function () { ui.busca = ''; abrirConfirm({ tipo: 'exSessao', modo: 'add', perm: false }); },
+    sessAdicionar: function () { ui.busca = ''; ui.grupo = grupoDominante(D.sessao.exs) || ui.grupo; abrirConfirm({ tipo: 'exSessao', modo: 'add', perm: false }); },
     sessTrocar: function (i) {
       var ex = D.sessao.exs[+i]; ui.busca = '';
       if (GRUPOS.some(function (gr) { return gr.g === grupoDe(ex.nome); })) ui.grupo = grupoDe(ex.nome);
@@ -950,7 +981,7 @@
       D.gavetas.medalhas = true; salvar(); render();
       rolarPara('gaveta-medalhas');
     },
-    regra: function (r) { D.regra = r === 'estrita' ? 'estrita' : 'descanso'; marcarEdicao(); salvar(); render(); },
+    metaSemanal: function (n) { D.metaSemanal = Math.min(7, Math.max(1, +n || 5)); marcarEdicao(); salvar(); render(); },
     abrirHist: function (id) { ui.abertoHist[id] = !ui.abertoHist[id]; render(); },
     excluirHist: function (id) { abrirConfirm({ tipo: 'excluirHist', alvo: id }); },
     filtroLetra: function (l) { ui.filtroLetra = l; render(); },
@@ -1091,14 +1122,14 @@
   }
 
   function vInicio() {
-    var p = ativo(), prox = proximoTreino(p), seq = sequencia(D.regra);
+    var p = ativo(), prox = proximoTreino(p), seq = sequencia();
     var hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     var emSessao = !!D.sessao, tSess = emSessao ? acharTreino(D.sessao.treinoId) : null;
     var heroT = tSess || prox;
     var hero = '<section class="hero card next" aria-labelledby="hero-t"><div class="hero-top"><div><span class="eyebrow accent">' + (emSessao ? 'Treino em andamento' : 'Próximo treino' + (p.proximoId ? ' · ajustado' : '')) + '</span>' +
       '<h2 id="hero-t"><span class="badge on" aria-hidden="true">' + esc(heroT.letra) + '</span><span>' + esc(heroT.nome || 'Sem nome') + '</span></h2></div>' +
-      '<div class="streak-mini" aria-label="' + plural(seq.atual, 'dia', 'dias') + ' de sequência"><b>' + seq.atual + '</b><span>' + (seq.atual === 1 ? 'dia' : 'dias') + '<br>seguidos</span></div></div>' +
-      tags(heroT) + '<p class="small muted">' + esc(seq.status) + '</p>' +
+      '<div class="streak-mini" aria-label="' + plural(seq.atual, 'semana seguida', 'semanas seguidas') + ' com a meta"><b>' + seq.atual + '</b><span>' + (seq.atual === 1 ? 'semana' : 'semanas') + '<br>seguidas</span></div></div>' +
+      tags(heroT) + (!emSessao && !p.proximoId ? (function () { var u = ultimaDoRodizio(p); return u ? '<p class="small muted">Último: ' + esc(u.h.letra) + ' em ' + ddmm(u.h.dia) + '.</p>' : ''; })() : '') + '<p class="small muted">' + esc(seq.status) + '</p>' +
       (emSessao ? '<button type="button" class="btn primary block xl" data-act="ir" data-arg="treinar">' + icon('play', 16) + 'Continuar treino · ' + tempoSessao() + '</button>'
         : '<button type="button" class="btn primary block xl" data-act="iniciar" data-arg="' + prox.id + '"' + (prox.exs.length ? '' : ' disabled') + '>' + icon('play', 16) + 'Começar treino ' + esc(prox.letra) + '</button>') + '</section>';
 
@@ -1115,7 +1146,7 @@
       dias.push('<li class="semana-dia' + (k === diaKey(hj) ? ' hoje' : '') + (hs.length ? ' feito' : '') + '"><span class="sd-nome">' + ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'][i] + '</span><span class="sd-letra">' + (hs.length ? hs.map(function (h) { return esc(h.letra); }).join('·') : '–') + '</span></li>');
     }
     var nSemana = Object.keys(porDia).filter(function (k) { return deKey(k) >= seg; }).length;
-    var gSemana = gaveta('semana', 'Treinos da semana', plural(nSemana, 'dia', 'dias'), '<ul class="semana" aria-label="Dias desta semana">' + dias.join('') + '</ul>');
+    var gSemana = gaveta('semana', 'Treinos da semana', nSemana + ' de ' + (D.metaSemanal || 5), '<ul class="semana" aria-label="Dias desta semana">' + dias.join('') + '</ul>');
 
     var linhasCarga = prox.exs.map(function (ex) {
       var r = refEx(ex.nome);
@@ -1123,7 +1154,7 @@
     }).join('');
     var gCargas = gaveta('cargas', 'Últimas cargas · treino ' + esc(prox.letra), '', '<div class="list">' + (linhasCarga || '<p class="small muted pad">Sem exercícios.</p>') + '</div>');
 
-    var gMedalhas = gaveta('medalhas', 'Medalhas do mês', plural(MEDALHAS.filter(function (m) { return seq.melhor >= m.n; }).length, 'conquistada', 'conquistadas'), medalhasHtml(seq), true);
+    var gMedalhas = gaveta('medalhas', 'Medalhas', plural(MEDALHAS.filter(function (m) { return seq.melhor >= m.n; }).length, 'conquistada', 'conquistadas'), medalhasHtml(seq), true);
 
     var dd = D.ultimoBackup ? Math.floor((Date.now() - new Date(D.ultimoBackup)) / 86400000) : null;
     var lembrete = !sync.vinculado && vivos().length >= 5 && (dd === null || dd >= 14)
@@ -1137,12 +1168,12 @@
   function medalhasHtml(seq) {
     var m = MEDALHAS.map(function (md) {
       var on = seq.melhor >= md.n;
-      return '<div class="medal' + (on ? ' on' : '') + '" role="listitem" aria-label="' + md.nome + ': ' + md.n + ' dias de sequência, ' + (on ? 'conquistada' : 'bloqueada') + '"><div class="disc" aria-hidden="true">' + md.n + '</div><span class="nm" aria-hidden="true">' + md.nome + '</span></div>';
+      return '<div class="medal' + (on ? ' on' : '') + '" role="listitem" aria-label="' + md.nome + ': ' + plural(md.n, 'semana seguida', 'semanas seguidas') + ', ' + (on ? 'conquistada' : 'bloqueada') + '"><div class="disc" aria-hidden="true">' + md.n + '</div><span class="nm" aria-hidden="true">' + md.nome + '</span></div>';
     }).join('');
     var prox = MEDALHAS.find(function (md) { return seq.melhor < md.n; });
-    var txt = prox ? 'Faltam ' + plural(prox.n - seq.atual, 'dia', 'dias') + ' de sequência para "' + prox.nome + '"' : 'Todas as medalhas do mês conquistadas.';
+    var txt = prox ? 'Faltam ' + plural(prox.n - seq.atual, 'semana', 'semanas') + ' com a meta para "' + prox.nome + '"' : 'Todas as medalhas conquistadas.';
     var pct = prox ? Math.round(Math.min(1, seq.atual / prox.n) * 100) : 100;
-    return '<div class="medals" role="list">' + m + '</div><div class="prox-medalha"><strong>' + esc(txt) + '</strong><div class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></div><span class="small muted">As medalhas recomeçam no dia 1º.</span></div>';
+    return '<div class="medals" role="list">' + m + '</div><div class="prox-medalha"><strong>' + esc(txt) + '</strong><div class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></div><span class="small muted">Cada semana (segunda a domingo) com ' + (D.metaSemanal || 5) + ' ou mais dias treinados conta. Uma semana abaixo da meta zera a sequência; as medalhas já conquistadas ficam.</span></div>';
   }
 
   /* --- Treinar --- */
@@ -1207,7 +1238,7 @@
           var rot = esc(ex.nome) + ', série ' + (j + 1), ph = placeholderCarga(ex, j, ref);
           return '<div class="set-grid set-row' + (x.ok ? ' ok' : '') + '"><span class="set-n">' + (j + 1) + '</span>' +
             '<input class="num" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="' + esc(ph || 'kg') + '" aria-label="' + rot + ': carga em kg' + (ph ? ' (referência ' + esc(ph) + ')' : '') + '" value="' + esc(x.carga) + '" data-set="' + i + ',' + j + ',carga">' +
-            '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" placeholder="' + ex.reps + '" aria-label="' + rot + ': repetições (meta ' + ex.reps + ')" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
+            '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" placeholder="' + esc(placeholderReps(ex, j, ref)) + '" aria-label="' + rot + ': repetições (meta ' + ex.reps + (ref ? ', da última vez ' + esc(placeholderReps(ex, j, ref)) : '') + ')" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
             '<button type="button" class="check" aria-pressed="' + x.ok + '" aria-label="' + (x.ok ? 'Desmarcar ' : 'Concluir ') + rot + '" data-act="toggleSet" data-arg="' + i + ',' + j + '">' + icon('check', 20) + '</button></div>';
         }).join('');
         corpo = '<div class="exg-corpo">' + refCard +
@@ -1269,14 +1300,28 @@
   }
 
   /* Biblioteca de exercícios por grupamento, com busca. act = ação ao tocar num exercício. */
-  function libHtml(act, jaNaLista) {
+  /* grupo mais presente numa lista de exercícios (para abrir a biblioteca no grupo do treino) */
+  function gruposDe(exs) {
+    var cont = {};
+    exs.forEach(function (x) { var g = grupoDe(x.nome); if (GRUPOS.some(function (gr) { return gr.g === g; })) cont[g] = (cont[g] || 0) + 1; });
+    return Object.keys(cont).sort(function (a, b) { return cont[b] - cont[a]; });
+  }
+  function grupoDominante(exs) { return gruposDe(exs)[0] || null; }
+  function seletorGrupo(exs) {
+    var doTreino = gruposDe(exs || []);
+    var op = function (g) { return '<option value="' + esc(g) + '"' + (ui.grupo === g ? ' selected' : '') + '>' + esc(g) + '</option>'; };
+    return '<div class="field tight grupos"><label for="grupo-sel">Grupamento muscular</label><select id="grupo-sel" class="input" data-change="grupoSel">' +
+      (doTreino.length ? '<optgroup label="Deste treino">' + doTreino.map(op).join('') + '</optgroup><optgroup label="Outros">' + GRUPOS.filter(function (gr) { return doTreino.indexOf(gr.g) < 0; }).map(function (gr) { return op(gr.g); }).join('') + '</optgroup>'
+        : GRUPOS.map(function (gr) { return op(gr.g); }).join('')) + '</select></div>';
+  }
+  function libHtml(act, jaNaLista, exsContexto) {
     var abas = GRUPOS.map(function (gr) { return '<button type="button" class="chip sm-chip" aria-pressed="' + (ui.grupo === gr.g) + '" data-act="grupo" data-arg="' + esc(gr.g) + '">' + esc(gr.g) + '</button>'; }).join('');
     var lib = GRUPOS.map(function (gr) {
       return '<div class="lib-grupo" data-grupo="' + esc(gr.g) + '"' + (ui.grupo === gr.g ? '' : ' hidden') + '><span class="lib-g">' + esc(gr.g) + '</span><div class="chips">' +
         gr.ex.map(function (n) { var ja = jaNaLista.indexOf(n) >= 0; return '<button type="button" class="chip square' + (ja ? ' ja' : '') + '" data-busca="' + esc(semAcento(n + ' ' + gr.g)) + '" data-act="' + act + '" data-arg="' + esc(n) + '"' + (ja ? ' aria-label="' + esc(n) + ', já está na lista"' : '') + '>' + (ja ? icon('check', 14) : '') + esc(n) + '</button>'; }).join('') + '</div></div>';
     }).join('');
     return '<div class="busca">' + icon('search', 18) + '<input id="busca-ex" class="input" type="search" placeholder="Buscar exercício" aria-label="Buscar exercício" value="' + esc(ui.busca) + '" enterkeyhint="search" autocomplete="off"></div>' +
-      '<div class="chips grupos" role="group" aria-label="Grupamento muscular">' + abas + '</div><div id="lib">' + lib + '<p class="small muted" id="lib-vazio" hidden>Nenhum exercício encontrado.</p></div>' +
+      (exsContexto ? seletorGrupo(exsContexto) : '<div class="chips grupos" role="group" aria-label="Grupamento muscular">' + abas + '</div>') + '<div id="lib">' + lib + '<p class="small muted" id="lib-vazio" hidden>Nenhum exercício encontrado.</p></div>' +
       '<span class="small soft" id="flash" role="status">' + esc(ui.flash || '') + '</span>';
   }
 
@@ -1286,7 +1331,7 @@
     return Object.keys(set).map(function (k) { return set[k]; });
   }
   function vEvolucao() {
-    var seq = sequencia(D.regra), nomes = nomesComHistorico(), p = ativo();
+    var seq = sequencia(), nomes = nomesComHistorico(), p = ativo();
     var html = cabecalho('Evolução', 'Relatório do mês, cargas, frequência e recordes.') + toastHtml();
     html += relatorioHtml();
     if (!vivos().length) return html + '<section class="vazio card flat"><strong>Ainda sem treinos registrados</strong><span class="small muted">Os gráficos aparecem depois do primeiro treino finalizado.</span><button type="button" class="btn primary" data-act="ir" data-arg="treinar">Ir para Treinar</button></section>' + calendarioHtml(seq);
@@ -1337,18 +1382,17 @@
   }
   function calendarioHtml(seq) {
     var agora = new Date(), primeiro = new Date(seq.Y, seq.M, 1), nDias = new Date(seq.Y, seq.M + 1, 0).getDate(), cal = '';
-    for (var b = 0; b < primeiro.getDay(); b++) cal += '<span class="day vazio" aria-hidden="true"></span>';
+    for (var b = 0; b < (primeiro.getDay() + 6) % 7; b++) cal += '<span class="day vazio" aria-hidden="true"></span>';
     for (var d = 1; d <= nDias; d++) {
-      var k = diaKey(new Date(seq.Y, seq.M, d)), feito = !!seq.feitos[k], naSeq = !!seq.naSequencia[k], hoje = d === seq.D, fut = d > seq.D;
-      cal += '<span class="day' + (feito ? (naSeq ? ' seq' : ' feito') : '') + (hoje ? ' hoje' : '') + (fut ? ' futuro' : '') + '" aria-label="Dia ' + d + (feito ? ', treinou' + (naSeq ? ', faz parte da sequência atual' : '') : fut ? '' : ', sem treino') + (hoje ? ', hoje' : '') + '">' + d + '</span>';
+      var dt = new Date(seq.Y, seq.M, d), k = diaKey(dt), feito = !!seq.feitos[k], semOk = !!seq.okSemana[diaKey(semanaDe(dt))], hoje = d === seq.D, fut = d > seq.D;
+      cal += '<span class="day' + (feito ? (semOk ? ' seq' : ' feito') : '') + (semOk ? ' sem-ok' : '') + (hoje ? ' hoje' : '') + (fut ? ' futuro' : '') + '" aria-label="Dia ' + d + (feito ? ', treinou' : fut ? '' : ', sem treino') + (semOk ? ', semana com meta batida' : '') + (hoje ? ', hoje' : '') + '">' + d + '</span>';
     }
-    var estrita = D.regra === 'estrita';
     return '<section class="section card flat" aria-labelledby="cal-t"><div class="seq-top"><div><h2 class="section-title" id="cal-t">' + esc(agora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) + '</h2>' +
-      '<span class="seq-big">' + seq.atual + ' <small>' + (seq.atual === 1 ? 'dia' : 'dias') + ' de sequência</small></span><span class="small muted">' + esc(seq.status) + '</span></div>' +
-      '<div class="seq-side"><span class="small muted">Melhor do mês</span><b>' + plural(seq.melhor, 'dia', 'dias') + '</b><span class="small muted">' + plural(seq.dias, 'treino', 'treinos') + '</span></div></div>' +
-      '<div class="cal-head" aria-hidden="true"><span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span></div><div class="cal">' + cal + '</div>' +
-      '<div class="legenda small"><span><i class="lg seq"></i>Sequência atual</span><span><i class="lg feito"></i>Outros dias treinados</span></div>' +
-      '<span class="small muted">Regra: ' + (estrita ? 'dias seguidos, sem descanso' : 'até 2 dias de descanso seguidos não quebram a sequência') + ' (mude em Ajustes).</span></section>';
+      '<span class="seq-big">' + seq.atual + ' <small>' + (seq.atual === 1 ? 'semana seguida' : 'semanas seguidas') + '</small></span><span class="small muted">' + esc(seq.status) + '</span></div>' +
+      '<div class="seq-side"><span class="small muted">Melhor sequência</span><b>' + plural(seq.melhor, 'semana', 'semanas') + '</b><span class="small muted">meta: ' + seq.meta + ' por semana</span></div></div>' +
+      '<div class="cal-head" aria-hidden="true"><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span><span>D</span></div><div class="cal">' + cal + '</div>' +
+      '<div class="legenda small"><span><i class="lg seq"></i>Treino em semana com meta batida</span><span><i class="lg feito"></i>Outros dias treinados</span></div>' +
+      '<span class="small muted">Semanas de segunda a domingo. A meta muda em Ajustes.</span></section>';
   }
 
   /* --- Histórico --- */
@@ -1575,14 +1619,14 @@
       var am = t[0] === 'auto' ? '<span class="amostra dupla" aria-hidden="true"><span style="background:#101214"><i style="background:#FF7A2F"></i></span><span style="background:#FFFFFF"><i style="background:#C8102E"></i></span></span>' : '<span class="amostra" style="background:' + t[3] + '" aria-hidden="true"><i style="background:' + t[4] + '"></i></span>';
       return '<button type="button" class="tema-op" aria-pressed="' + (D.tema === t[0]) + '" data-act="tema" data-arg="' + t[0] + '">' + am + '<span><b>' + t[1] + '</b><span class="small muted">' + t[2] + '</span></span></button>';
     }).join('') + '</div>';
-    var estrita = D.regra === 'estrita';
     var bk = D.ultimoBackup ? 'Último backup: ' + new Date(D.ultimoBackup).toLocaleDateString('pt-BR') + '.' : 'Nenhum backup feito ainda.';
     var podeCompartilhar = !!(navigator.canShare && window.File);
     return cabecalho('Ajustes', null) + avisoNegado() + toastHtml() +
       '<section class="section card flat" aria-labelledby="conta-t"><h2 class="section-title" id="conta-t">Conta e nuvem</h2>' + conta + '</section>' +
       '<section class="section card flat"><h2 class="section-title" id="tema-lbl">Aparência</h2>' + temaHtml + '</section>' +
-      '<section class="section card flat"><h2 class="section-title" id="regra-lbl">Sequência</h2><div class="segmented" role="group" aria-labelledby="regra-lbl"><button type="button" aria-pressed="' + !estrita + '" data-act="regra" data-arg="descanso">Até 2 descansos</button><button type="button" aria-pressed="' + estrita + '" data-act="regra" data-arg="estrita">Dias seguidos</button></div>' +
-      '<span class="small muted">' + (estrita ? 'Cada dia sem treino zera a sequência.' : 'Até 2 dias de descanso seguidos não quebram a sequência; o 3º dia sem treino quebra. Só dias treinados contam.') + '</span></section>' +
+      '<section class="section card flat"><h2 class="section-title" id="meta-lbl">Meta semanal</h2><div class="segmented seis" role="group" aria-labelledby="meta-lbl">' +
+      [2, 3, 4, 5, 6, 7].map(function (n) { return '<button type="button" aria-pressed="' + (D.metaSemanal === n) + '" data-act="metaSemanal" data-arg="' + n + '">' + n + '</button>'; }).join('') + '</div>' +
+      '<span class="small muted">Dias de treino por semana (segunda a domingo). A sequência conta semanas seguidas com a meta cumprida; faltar num dia não quebra nada se você completar a meta até domingo.</span></section>' +
       '<section class="section card flat"><h2 class="section-title">Relógio (Samsung Health)</h2><span class="small muted">' + (D.saude.length ? plural(D.saude.length, 'dia importado', 'dias importados') + ', de ' + ddmm(saudeOrdenada()[0].dia) + ' a ' + esc(deKey(saudeOrdenada()[D.saude.length - 1].dia).toLocaleDateString('pt-BR')) + '. Importar de novo só acrescenta ou atualiza dias.' : 'Nenhum dado importado.') + ' No Samsung Health: menu › Configurações › Baixar dados pessoais; aqui, escolha o .zip ou os .csv da pasta.</span>' +
       '<div class="row-actions"><button type="button" class="btn sm" data-act="importarRelogio">' + icon('upload', 18) + 'Importar dados do relógio</button></div>' +
       '<span class="small" id="lemb-lbl">Lembrete para sincronizar e importar</span><div class="segmented quatro" role="group" aria-labelledby="lemb-lbl">' + [[7, '7 dias'], [14, '14 dias'], [30, '30 dias'], [0, 'Desligado']].map(function (o) { return '<button type="button" aria-pressed="' + (lembreteDias() === o[0]) + '" data-act="lembreteDias" data-arg="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div></section>' +
@@ -1610,7 +1654,7 @@
       corpo = '<h2 id="dlg-t">' + (c.modo === 'add' ? 'Adicionar exercício' : 'Trocar ' + esc(exT.nome)) + '</h2>' +
         '<p id="dlg-d">' + (c.modo === 'add' ? 'Entra no fim da lista de hoje.' : 'O substituto fica no mesmo lugar, com as mesmas séries e repetições.' + (seriesOk(c.idx) ? ' As séries já marcadas deste exercício serão descartadas.' : '')) + '</p>' +
         '<label class="toggle"><input type="checkbox" data-act="exPerm"' + (c.perm ? ' checked' : '') + '> ' + (c.modo === 'add' ? 'Incluir também no treino ' : 'Trocar também no treino ') + esc(tS ? tS.letra : '') + ' (próximas vezes)</label>' +
-        libHtml('escolherEx', D.sessao.exs.map(function (x) { return x.nome; })) +
+        libHtml('escolherEx', D.sessao.exs.map(function (x) { return x.nome; }), D.sessao.exs) +
         '<div class="field tight"><label for="ex-custom">Ou digite outro exercício</label><div class="linha-input"><input id="ex-custom" class="input" type="text" autocomplete="off" placeholder="ex.: Supino na Smith" enterkeyhint="done"><button type="button" class="btn sm" data-act="escolherEx" data-arg="">Usar</button></div></div>' +
         '<div class="acts"><button type="button" class="btn" data-act="fechar">Cancelar</button></div>';
     }
@@ -1708,6 +1752,7 @@
   document.addEventListener('change', function (e) {
     var el = e.target, k = el.getAttribute && el.getAttribute('data-change');
     if (k === 'evoEx') { ui.evoEx = el.value; render(); var s = document.getElementById('evo-ex'); if (s) s.focus(); }
+    else if (k === 'grupoSel') { ui.grupo = el.value; aplicarBusca(); }
     else if (k === 'filtroEx') { ui.filtroEx = el.value; render(); var f = document.getElementById('f-ex'); if (f) f.focus(); }
   });
   document.addEventListener('input', function (e) {

@@ -40,10 +40,11 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 - Pesagens antigas (manuais ou da balança por Bluetooth) ficam guardadas em "Registros anteriores", fora dos gráficos. A leitura da balança por Bluetooth foi removida na versão 2.3.
 - Lembrete: depois de 7 dias sem importar (mude para 14, 30 ou desligado em Ajustes), aparece um aviso no Início e no Corpo para sincronizar o relógio e importar.
 
-## Regras da sequência
-- **Até 2 descansos** (padrão): até 2 dias seguidos sem treino não quebram a sequência; o 3º quebra. Só dias treinados contam.
-- **Dias seguidos**: qualquer dia sem treino zera.
-- Medalhas por sequência no mês: 3, 5, 7, 12 e 20 dias. Recomeçam no dia 1º.
+## Sequência por semanas
+- Meta semanal em Ajustes (2 a 7 dias de treino; padrão 5). Semana de segunda a domingo.
+- A sequência conta semanas seguidas com a meta cumprida. Faltar num dia não quebra nada se a meta for batida até domingo; uma semana abaixo da meta zera.
+- Medalhas por semanas seguidas: 1, 2, 4, 8, 12, 26 e 52.
+- Na sessão, os campos de carga e repetições mostram em cinza o que você fez na mesma série da última vez.
 
 ## Publicar uma atualização
 Ao alterar qualquer arquivo, aumente `VERSAO` em `sw.js` para o celular baixar a nova versão.
