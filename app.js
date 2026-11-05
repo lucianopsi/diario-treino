@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.6.0';
+  var VERSAO_APP = '2.6.1';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -830,6 +830,58 @@
     ui.relMes = null;
     mostrarToast('Dados do relógio importados: ' + plural(c.novos, 'dia novo', 'dias novos') + (c.mudados ? ', ' + plural(c.mudados, 'atualizado', 'atualizados') : '') + (c.medNovas || c.medMud ? ' e ' + plural(c.medNovas + c.medMud, 'medição corporal', 'medições corporais') : '') + '.');
   }
+  /* Ajuste combinado em 05/11: cria "ABC ajustado 2" a partir do "ABC ajustado" atual (que fica intacto).
+     A: sai o tríceps scott; entram abdominal infra e face pull. B: RDL vai para o início, sai a adutora, entra panturrilha sentada.
+     C: fica uma adutora só e entra a elevação pélvica. */
+  var AJ = { de: 'ABC ajustado', para: 'ABC ajustado 2' };
+  function ajustePendente() {
+    return !D.perfil.ajuste0511 && D.programas.some(function (p) { return p.nome === AJ.de && p.treinos.length === 3; }) && !D.programas.some(function (p) { return p.nome === AJ.para; });
+  }
+  function aplicarAjuste() {
+    var orig = D.programas.find(function (p) { return p.nome === AJ.de && p.treinos.length === 3; });
+    if (!orig) return;
+    var p = clone(orig);
+    p.id = uid('p'); p.nome = AJ.para; p.proximoId = null;
+    p.treinos.forEach(function (t) { t.id = uid('t'); t.exs.forEach(function (x) { x.id = uid('e'); }); });
+    function novo(nome, series, reps) {
+      var r = registrosDe(nome, pesoLivre(nome) ? null : D.perfil.academia);
+      return { id: uid('e'), nome: nome, series: series, reps: reps, carga: r.length ? r[r.length - 1].top : 0 };
+    }
+    function idx(t, nome) { return t.exs.findIndex(function (x) { return mesmoNome(x.nome, nome); }); }
+    function tira(t, nome) { var i = idx(t, nome); if (i >= 0) t.exs.splice(i, 1); }
+    function poeDepois(t, ref, ex) { if (idx(t, ex.nome) >= 0) return; var i = idx(t, ref); t.exs.splice(i >= 0 ? i + 1 : t.exs.length, 0, ex); }
+    function series(t, nome, n) { var i = idx(t, nome); if (i >= 0) t.exs[i].series = n; }
+    var A = p.treinos[0], B = p.treinos[1], C = p.treinos[2];
+    // A
+    tira(A, 'Tríceps scott');
+    ['Supino reto (barra)', 'Supino inclinado (halteres)', 'Supino Declinado (máquina)', 'Desenvolvimento (halteres)'].forEach(function (n) { series(A, n, 3); });
+    poeDepois(A, 'Elevação lateral', novo('Face pull (corda)', 2, 15));
+    poeDepois(A, 'Abdominal na polia (ajoelhado)', novo('Abdominal infra (elevação de pernas)', 3, 15));
+    // B
+    tira(B, 'Cadeira adutora'); tira(B, 'Pulldown (barra reta)'); tira(B, 'Pulldown');
+    var ir = idx(B, 'Levantamento terra romeno');
+    if (ir > 0) B.exs.unshift(B.exs.splice(ir, 1)[0]);
+    series(B, 'Rosca alternada (halteres)', 2);
+    poeDepois(B, '___fim', novo('Panturrilha sentada', 3, 15));
+    // C: uma adutora só (a de maior carga), elevação pélvica depois da flexora
+    var ads = C.exs.filter(function (x) { return mesmoNome(x.nome, 'Cadeira adutora'); });
+    if (ads.length > 1) { var fica = ads.reduce(function (a, x) { return x.carga > a.carga ? x : a; }); C.exs = C.exs.filter(function (x) { return !mesmoNome(x.nome, 'Cadeira adutora') || x === fica; }); fica.series = 3; }
+    poeDepois(C, 'Cadeira flexora', novo('Elevação pélvica (barra)', 3, 12));
+    D.programas.push(p); D.ativoId = p.id; D.perfil.ajuste0511 = true; marcarEdicao(); salvar();
+    var tot = p.treinos.map(function (t) { return t.letra + ' ' + t.exs.reduce(function (a, x) { return a + x.series; }, 0); }).join(', ');
+    mostrarToast('"' + AJ.para + '" criado e em uso (séries: ' + tot + '). O rodízio continua de onde parou; o "' + AJ.de + '" ficou salvo no editor.');
+    render();
+  }
+  function avisoAjuste() {
+    if (!ajustePendente() || D.sessao) return '';
+    return '<section class="notice lembrete-rel"><strong>Ajustes do treino prontos</strong>' +
+      '<ul class="passos small"><li>A: entram abdominal infra (3) e face pull (2); sai o tríceps scott; supinos e desenvolvimento em 3 séries.</li>' +
+      '<li>B: RDL passa para o início; sai a adutora; entra panturrilha sentada (3).</li>' +
+      '<li>C: fica uma cadeira adutora só; entra elevação pélvica (3).</li></ul>' +
+      '<span class="small muted">Cria o "' + AJ.para + '" e passa a usar. O "' + AJ.de + '" atual fica guardado, e dá para voltar no editor.</span>' +
+      '<div class="row-actions"><button type="button" class="btn sm primary" data-act="aplicarAjuste">Aplicar ajustes</button><button type="button" class="btn sm ghost" data-act="dispensarAjuste">Agora não</button></div></section>';
+  }
+
   /* lembrete: depois de N dias sem importar (padrão 7), aviso no Início e no Corpo */
   function diasSemImportar() {
     var t = D.perfil.ultimaImportacao || 0;
@@ -1027,6 +1079,8 @@
     excluirPeso: function (id) { abrirConfirm({ tipo: 'excluirPeso', alvo: id }); },
     editor: function (on) { ui.editor = on === '1'; ui.picker = false; render(); window.scrollTo(0, 0); },
     pickProg: function (id) { var p = D.programas.find(function (x) { return x.id === id; }); ui.editId = id; ui.editTreinoId = p.treinos[0].id; ui.picker = false; render(); },
+    aplicarAjuste: function () { aplicarAjuste(); },
+    dispensarAjuste: function () { D.perfil.ajuste0511 = true; salvar(); render(); },
     modelo: function (id) {
       var m = MODELOS.find(function (x) { return x.id === id; }); if (!m) return;
       function e(x) {
@@ -1197,7 +1251,7 @@
     var lembrete = !sync.vinculado && vivos().length >= 5 && (dd === null || dd >= 14)
       ? '<section class="notice"><strong>Faça um backup</strong><span class="small muted">' + (dd === null ? 'Você ainda não salvou uma cópia do histórico.' : 'Seu último backup foi há ' + dd + ' dias.') + ' Ou entre com Google em Ajustes para guardar tudo na nuvem.</span><button type="button" class="btn sm" data-act="compartilhar">' + icon('share', 18) + 'Salvar backup agora</button></section>' : '';
 
-    return cabecalho('Início', null, hoje) + avisoNegado() + toastHtml() + avisoRelogio(false) + remoto + hero + atalhos + lembrete + gSemana + gCargas + gMedalhas;
+    return cabecalho('Início', null, hoje) + avisoNegado() + toastHtml() + avisoAjuste() + avisoRelogio(false) + remoto + hero + atalhos + lembrete + gSemana + gCargas + gMedalhas;
   }
   function atalho(act, arg, ic, rot) {
     return '<button type="button" class="atalho" data-act="' + act + '" data-arg="' + arg + '"><span class="atalho-ic">' + icon(ic, 22) + '</span><span>' + rot + '</span></button>';
