@@ -45,6 +45,9 @@ App (PWA) para montar divisões de treino (ABC, ABCDE…), registrar séries e c
 - A sequência conta semanas seguidas com a meta cumprida. Faltar num dia não quebra nada se a meta for batida até domingo; uma semana abaixo da meta zera.
 - Medalhas por semanas seguidas: 1, 2, 4, 8, 12, 26 e 52.
 - Na sessão, os campos de carga e repetições mostram em cinza o que você fez na mesma série da última vez.
+- Academia: escolhida no topo da sessão (Selfit Golden, Selfit Saramanta ou Outra academia) e lembrada para a próxima. Em máquinas e polias, a referência e a evolução só comparam com a mesma academia; em peso livre (barra, halteres, barra fixa, terra romeno) valem em qualquer lugar.
+- Drop: "Adicionar drop" cria uma linha ↳ ligada à série anterior. Drops aparecem no histórico, mas não contam como série.
+- Séries do treino: se você fizer mais séries do que o modelo, o modelo passa a ter esse número. Se fizer menos, só diminui quando o exercício for concluído.
 
 ## Publicar uma atualização
 Ao alterar qualquer arquivo, aumente `VERSAO` em `sw.js` para o celular baixar a nova versão.

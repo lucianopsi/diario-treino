@@ -4,7 +4,7 @@
 (function () {
   'use strict';
 
-  var VERSAO_APP = '2.5.0';
+  var VERSAO_APP = '2.6.0';
   var CHAVE = 'diario-treino-v1';
   var CHAVE_COPIA = 'diario-treino-v1-copia-antes-2.0';
   var CHAVE_VINCULO = 'diario-treino-vinculo';
@@ -260,9 +260,19 @@
   function chaveNome(n) { return semAcento(n).replace(/\s+/g, ' ').trim(); }
   function mesmoNome(a, b) { return chaveNome(a) === chaveNome(b); }
   function temNome(lista, n) { return lista.some(function (x) { return mesmoNome(x, n); }); }
-  function registrosDe(nome) {
-    var regs = [];
+  /* Máquinas e polias têm calibragem própria: a referência delas só vale na mesma academia.
+     Peso livre (barra, halter, peso do corpo) vale em qualquer lugar. */
+  var ACADEMIAS = ['Selfit Golden', 'Selfit Saramanta', 'Outra academia'];
+  function pesoLivre(nome) {
+    var n = semAcento(nome);
+    return /\((barra|barra w|halteres|halter)\)/.test(n) ||
+      /barra fixa|terra romeno|terra convencional|agachamento livre|agachamento frontal|agachamento bulgaro|rosca alternada|rosca martelo|rosca concentrada|elevacao de pernas|abdominal supra|prancha|flexao de braco|paralelas/.test(n);
+  }
+  function curtaAcad(a) { return String(a || '').replace(/^Selfit /, ''); }
+  function registrosDe(nome, acad) {
+    var regs = [], filtra = acad && !pesoLivre(nome);
     vivos().forEach(function (h) {
+      if (filtra && h.academia !== acad) return;
       var e = h.exs.find(function (x) { return mesmoNome(x.nome, nome); });
       if (e && e.sets.length) {
         var top = e.sets.reduce(function (a, x) { return x.carga > a.carga ? x : a; }, e.sets[0]);
@@ -271,31 +281,45 @@
     });
     return regs;
   }
-  function refEx(nome) {
-    var regs = registrosDe(nome);
+  function refEx(nome, acad) {
+    var regs = registrosDe(nome, acad), outra = false;
+    if (!regs.length && acad && !pesoLivre(nome)) { regs = registrosDe(nome); outra = regs.length > 0; } // sem histórico nesta academia: mostra o de outra, avisando
     if (!regs.length) return null;
     var ult = regs[regs.length - 1], ant = regs.length > 1 ? regs[regs.length - 2] : null;
     var recorde = regs.reduce(function (a, r) { return r.top > a.top ? r : a; }, regs[0]);
-    return { ult: ult, ant: ant, recorde: recorde.top, recordeDia: recorde.dia, topSet: ult.topSet, tendencia: ant ? ult.top - ant.top : null, n: regs.length };
+    return { outraAcademia: outra, ult: ult, ant: ant, recorde: recorde.top, recordeDia: recorde.dia, topSet: ult.topSet, tendencia: ant ? ult.top - ant.top : null, n: regs.length };
   }
   function seta(dif) {
     if (dif > 0) return '<span class="trend up">' + icon('up', 14) + '+' + kg(dif) + ' kg</span>';
     if (dif < 0) return '<span class="trend down">' + icon('down', 14) + '−' + kg(-dif) + ' kg</span>';
     return '<span class="trend eq">' + icon('equal', 14) + 'mesma carga</span>';
   }
-  function refSerie(ref, j) {
+  /* Linha j da sessão de hoje → série correspondente da última vez.
+     Séries normais se comparam com as normais; drops, com os drops. */
+  function refLinha(ref, linhas, j) {
     if (!ref || !ref.ult.sets.length) return null;
-    var ss = ref.ult.sets;
-    return ss[j] || ss[ss.length - 1]; // série a mais que da última vez: usa a última feita, não a maior
+    var drop = !!(linhas[j] && linhas[j].d), k = 0;
+    for (var a = 0; a < j; a++) if (!!(linhas[a] && linhas[a].d) === drop) k++;
+    var ss = ref.ult.sets.filter(function (x) { return !!x.d === drop; });
+    if (!ss.length) return drop ? null : ref.ult.sets[ref.ult.sets.length - 1];
+    return ss[k] || ss[ss.length - 1]; // linha a mais que da última vez: usa a última feita, não a maior
   }
-  function placeholderCarga(ex, j, ref) {
-    var r = refSerie(ref, j);
+  function placeholderCarga(ex, linhas, j, ref) {
+    if (ref && ref.outraAcademia) return ''; // carga de outra máquina não serve de referência
+    var r = refLinha(ref, linhas, j);
     if (r) return virgula(r.carga);
-    return ex.carga ? virgula(ex.carga) : '';
+    return ex.carga && !(linhas[j] && linhas[j].d) && !ref ? virgula(ex.carga) : '';
   }
-  function placeholderReps(ex, j, ref) {
-    var r = refSerie(ref, j);
+  function placeholderReps(ex, linhas, j, ref) {
+    var r = refLinha(ref, linhas, j);
     return r && r.reps ? String(r.reps) : String(ex.reps);
+  }
+  function setsTxt(sets) {
+    return sets.map(function (x) { return (x.d ? '↳ ' : '') + kg(x.carga) + '×' + x.reps; }).join('  ·  ');
+  }
+  function contaSeries(sets) {
+    var n = sets.filter(function (x) { return !x.d; }).length, dr = sets.length - n;
+    return plural(n, 'série', 'séries') + (dr ? ' + ' + plural(dr, 'drop', 'drops') : '');
   }
 
   /* Sequência por semanas (segunda a domingo). Uma semana conta quando tem pelo menos "meta" dias treinados.
@@ -333,7 +357,7 @@
   /* ---------- sessão em andamento ---------- */
   function novaSessao(t) {
     return {
-      id: uid('h'), treinoId: t.id, inicio: Date.now(), atual: null, exs: clone(t.exs),
+      id: uid('h'), treinoId: t.id, inicio: Date.now(), atual: null, exs: clone(t.exs), academia: D.perfil.academia || null,
       feitos: t.exs.map(function () { return false; }),
       ordem: t.exs.map(function (x, i) { return i; }),
       sets: t.exs.map(function (ex) { var a = []; for (var k = 0; k < ex.series; k++) a.push({ carga: '', reps: '', ok: false }); return a; })
@@ -365,14 +389,20 @@
     var p = D.programas.find(function (pp) { return pp.treinos.indexOf(t) >= 0; });
     var reg = { id: s.id, dia: diaKey(new Date()), fim: Date.now(), treinoId: t.id, letra: t.letra, nome: t.nome, divisao: p ? p.nome : '', duracao: Math.max(1, Math.round((Date.now() - s.inicio) / 60000)), exs: [] };
     if (s.preTreino) reg.preTreino = true;
+    if (s.academia) reg.academia = s.academia;
     s.ordem.forEach(function (i) {
       var ex = s.exs[i];
-      var feitas = (s.sets[i] || []).filter(function (x) { return x.ok; }).map(function (x) { return { carga: num(x.carga), reps: parseInt(x.reps, 10) || 0 }; });
+      var feitas = (s.sets[i] || []).filter(function (x) { return x.ok; }).map(function (x) { var o = { carga: num(x.carga), reps: parseInt(x.reps, 10) || 0 }; if (x.d) o.d = true; return o; });
       total += feitas.length;
       if (!feitas.length) return;
       reg.exs.push({ nome: ex.nome, sets: feitas });
       var noTreino = t.exs.find(function (x) { return x.id === ex.id; });
-      if (noTreino) noTreino.carga = feitas.reduce(function (a, x) { return x.carga > a ? x.carga : a; }, 0);
+      if (noTreino) {
+        noTreino.carga = feitas.reduce(function (a, x) { return x.carga > a ? x.carga : a; }, 0);
+        // o número de séries segue o que você fez (drops não contam): sobe sempre; desce só se o exercício foi concluído
+        var normais = feitas.filter(function (x) { return !x.d; }).length;
+        if (normais && (normais > noTreino.series || (s.feitos[i] && normais < noTreino.series))) noTreino.series = normais;
+      }
     });
     if (!total) return;
     if (p) p.proximoId = null;
@@ -905,14 +935,20 @@
       var ij = arg.split(','), i = +ij[0], j = +ij[1], x = D.sessao.sets[i][j];
       var ex = D.sessao.exs[i];
       if (!x.ok) {
-        if (x.carga === '') x.carga = placeholderCarga(ex, j, refEx(ex.nome));
-        if (x.reps === '') x.reps = placeholderReps(ex, j, refEx(ex.nome));
+        var rf = refEx(ex.nome, D.sessao.academia), ls = D.sessao.sets[i];
+        if (x.carga === '') x.carga = placeholderCarga(ex, ls, j, rf);
+        if (x.reps === '') x.reps = placeholderReps(ex, ls, j, rf);
       }
       x.ok = !x.ok; salvar(); render();
     },
     addSet: function (i) {
-      var arr = D.sessao.sets[+i], u = arr[arr.length - 1] || { carga: '', reps: '' };
+      var arr = D.sessao.sets[+i], normais = arr.filter(function (x) { return !x.d; }), u = normais[normais.length - 1] || { carga: '', reps: '' };
       arr.push({ carga: u.carga, reps: u.reps, ok: false }); salvar(); render();
+    },
+    addDrop: function (i) { D.sessao.sets[+i].push({ carga: '', reps: '', ok: false, d: true }); salvar(); render(); },
+    tirarLinha: function (arg) {
+      var a = arg.split(','), arr = D.sessao.sets[+a[0]];
+      if (arr && arr[+a[1]] && !arr[+a[1]].ok) { arr.splice(+a[1], 1); salvar(); render(); }
     },
     abrirEx: function (i) { D.sessao.atual = D.sessao.atual === +i ? null : +i; salvar(); render(); rolarPara('exg-' + i); },
     mover: function (arg) {
@@ -1149,7 +1185,8 @@
     var gSemana = gaveta('semana', 'Treinos da semana', nSemana + ' de ' + (D.metaSemanal || 5), '<ul class="semana" aria-label="Dias desta semana">' + dias.join('') + '</ul>');
 
     var linhasCarga = prox.exs.map(function (ex) {
-      var r = refEx(ex.nome);
+      var r = refEx(ex.nome, D.perfil.academia);
+      if (r && r.outraAcademia) r = null;
       return '<div class="list-row"><div><span class="nome">' + esc(ex.nome) + '</span><span class="small muted">' + (r ? ddmm(r.ult.dia) + ' · ' + kg(r.topSet.carga) + ' kg × ' + r.topSet.reps : 'sem registro ainda') + '</span></div>' + (r && r.tendencia !== null ? seta(r.tendencia) : '') + '</div>';
     }).join('');
     var gCargas = gaveta('cargas', 'Últimas cargas · treino ' + esc(prox.letra), '', '<div class="list">' + (linhasCarga || '<p class="small muted pad">Sem exercícios.</p>') + '</div>');
@@ -1223,27 +1260,30 @@
     var aviso = s.aviso ? '<div class="toast" role="status">' + icon('check', 18) + '<span>' + esc(s.aviso) + '</span></div>' : '';
     if (s.aviso) { s.aviso = ''; gravarLocal(); }
     var itens = s.ordem.map(function (i, pos) {
-      var ex = exs[i], ok = seriesOk(i), sets = s.sets[i] || [], feito = s.feitos[i], aberta = s.atual === i, ref = refEx(ex.nome);
+      var ex = exs[i], ok = seriesOk(i), sets = s.sets[i] || [], feito = s.feitos[i], aberta = s.atual === i, ref = refEx(ex.nome, s.academia);
       var est = feito ? 'done' : ok ? 'half' : 'circle';
       var status = feito ? 'Feito' : ok ? ok + '/' + sets.length : i === sug ? 'A seguir' : '';
       var corpo = '';
       if (aberta) {
         var hojeTop = sets.filter(function (x) { return x.ok; }).reduce(function (a, x) { return Math.max(a, num(x.carga)); }, 0);
         var refCard = '<div class="ref-card">' + (ref
-          ? '<div class="ref-row"><span class="muted small">Última vez · ' + ddmm(ref.ult.dia) + '</span><span class="ref-sets">' + ref.ult.sets.map(function (x) { return kg(x.carga) + '×' + x.reps; }).join('  ·  ') + '</span></div>' +
+          ? '<div class="ref-row"><span class="muted small">Última vez · ' + ddmm(ref.ult.dia) + (ref.outraAcademia ? ' · outra academia' : !pesoLivre(ex.nome) && s.academia ? ' · ' + esc(curtaAcad(s.academia)) : '') + '</span><span class="ref-sets">' + setsTxt(ref.ult.sets) + '</span></div>' +
+            (ref.outraAcademia ? '<span class="small aviso-acad">Ainda sem registro deste aparelho nesta academia: a carga acima é de outra máquina e não vira referência.</span>' : '') +
             '<div class="ref-row two"><span><span class="muted small">Recorde</span> <b>' + kg(ref.recorde) + ' kg</b></span>' + (ref.tendencia !== null ? '<span><span class="muted small">vs. anterior</span> ' + seta(ref.tendencia) + '</span>' : '') + '</div>' +
             (ok ? '<div class="ref-row hoje"><span class="muted small">Hoje (maior carga)</span><span><b>' + kg(hojeTop) + ' kg</b> ' + seta(hojeTop - ref.ult.top) + '</span></div>' : '')
           : '<span class="muted small">Primeira vez neste exercício. Os valores de hoje viram a referência do próximo treino.</span>') + '</div>';
+        var nNormal = 0;
         var linhas = sets.map(function (x, j) {
-          var rot = esc(ex.nome) + ', série ' + (j + 1), ph = placeholderCarga(ex, j, ref);
-          return '<div class="set-grid set-row' + (x.ok ? ' ok' : '') + '"><span class="set-n">' + (j + 1) + '</span>' +
+          if (!x.d) nNormal++;
+          var rot = esc(ex.nome) + (x.d ? ', drop após a série ' + nNormal : ', série ' + nNormal), ph = placeholderCarga(ex, sets, j, ref), pr = placeholderReps(ex, sets, j, ref);
+          return '<div class="set-grid set-row' + (x.ok ? ' ok' : '') + (x.d ? ' drop' : '') + '"><span class="set-n">' + (x.d ? (x.ok ? '↳' : '<button type="button" class="tira" aria-label="Tirar este drop" data-act="tirarLinha" data-arg="' + i + ',' + j + '">↳</button>') : nNormal) + '</span>' +
             '<input class="num" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="' + esc(ph || 'kg') + '" aria-label="' + rot + ': carga em kg' + (ph ? ' (referência ' + esc(ph) + ')' : '') + '" value="' + esc(x.carga) + '" data-set="' + i + ',' + j + ',carga">' +
-            '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" placeholder="' + esc(placeholderReps(ex, j, ref)) + '" aria-label="' + rot + ': repetições (meta ' + ex.reps + (ref ? ', da última vez ' + esc(placeholderReps(ex, j, ref)) : '') + ')" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
+            '<input class="num" type="number" inputmode="numeric" min="0" enterkeyhint="done" placeholder="' + esc(pr) + '" aria-label="' + rot + ': repetições (meta ' + ex.reps + (ref ? ', da última vez ' + esc(pr) : '') + ')" value="' + esc(x.reps) + '" data-set="' + i + ',' + j + ',reps">' +
             '<button type="button" class="check" aria-pressed="' + x.ok + '" aria-label="' + (x.ok ? 'Desmarcar ' : 'Concluir ') + rot + '" data-act="toggleSet" data-arg="' + i + ',' + j + '">' + icon('check', 20) + '</button></div>';
         }).join('');
         corpo = '<div class="exg-corpo">' + refCard +
           '<div class="set-grid set-labels" aria-hidden="true"><span>#</span><span>Carga (kg)</span><span>Reps</span><span></span></div>' + linhas +
-          '<button type="button" class="link plain add" data-act="addSet" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar série</button>' +
+          '<div class="add-linhas"><button type="button" class="link plain add" data-act="addSet" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar série</button><button type="button" class="link plain add" data-act="addDrop" data-arg="' + i + '">' + icon('plus', 16) + 'Adicionar drop</button></div>' +
           '<span class="small muted">Campo vazio usa o valor em cinza ao marcar a série.</span>' +
           (ex.trocadoDe ? '<span class="small muted">Hoje no lugar de ' + esc(ex.trocadoDe) + '.</span>' : '') +
           '<div class="row-actions exg-acoes"><button type="button" class="btn sm" data-act="sessTrocar" data-arg="' + i + '">' + icon('swap', 16) + 'Trocar exercício</button><button type="button" class="btn sm ghost" data-act="sessRemover" data-arg="' + i + '">' + icon('trash', 16) + 'Remover</button></div>' +
@@ -1251,13 +1291,15 @@
       }
       return '<section class="ex-gaveta' + (aberta ? ' aberta' : '') + (feito ? ' feito' : '') + (i === sug && !aberta ? ' sug' : '') + '" id="exg-' + i + '">' +
         '<div class="exg-cab"><button type="button" class="exg-toggle" aria-expanded="' + aberta + '" data-act="abrirEx" data-arg="' + i + '">' +
-        '<span class="st st-' + est + '" aria-hidden="true">' + icon(est, 22) + '</span><span class="mid"><b>' + esc(ex.nome) + '</b><span class="small muted">' + ex.series + ' × ' + ex.reps + (ref ? ' · última ' + kg(ref.topSet.carga) + ' kg' : '') + '</span></span>' +
+        '<span class="st st-' + est + '" aria-hidden="true">' + icon(est, 22) + '</span><span class="mid"><b>' + esc(ex.nome) + '</b><span class="small muted">' + ex.series + ' × ' + ex.reps + (ref && !ref.outraAcademia ? ' · última ' + kg(ref.topSet.carga) + ' kg' : '') + '</span></span>' +
         (status ? '<span class="small st-txt">' + status + '</span>' : '') + '</button>' +
         '<div class="exg-ordem"><button type="button" class="icon-btn sm" aria-label="Mover ' + esc(ex.nome) + ' para cima" data-act="mover" data-arg="' + pos + ',-1"' + (pos === 0 ? ' disabled' : '') + '>' + icon('up', 18) + '</button>' +
         '<button type="button" class="icon-btn sm" aria-label="Mover ' + esc(ex.nome) + ' para baixo" data-act="mover" data-arg="' + pos + ',1"' + (pos === s.ordem.length - 1 ? ' disabled' : '') + '>' + icon('down', 18) + '</button></div></div>' +
         corpo + '</section>';
     }).join('');
     return '<div class="sess-head"><div class="sess-row"><button type="button" class="link plain" data-act="cancelar">Cancelar</button><span class="sess-dir"><button type="button" class="chip sm-chip pre" aria-pressed="' + !!s.preTreino + '" data-act="preTreino">' + (s.preTreino ? icon('check', 16) : '') + 'Pré-treino</button><span class="timer" id="tempo" role="timer" aria-label="Tempo de treino">' + tempoSessao() + '</span></span></div>' +
+      '<div class="sess-row acad-row"><label for="sess-acad" class="small muted">Academia</label><select id="sess-acad" class="input" data-change="academia">' + (s.academia ? '' : '<option value="" selected>Escolha…</option>') +
+        ACADEMIAS.map(function (a) { return '<option' + (s.academia === a ? ' selected' : '') + '>' + esc(a) + '</option>'; }).join('') + '</select></div>' +
       '<div class="sess-title"><div class="badge on" aria-hidden="true">' + esc(t.letra) + '</div><div class="sess-title-txt"><span class="eyebrow">Em andamento' + (sync.vinculado ? ' · na nuvem' : '') + '</span><h1>' + esc(t.nome) + '</h1></div></div>' +
       '<div class="sess-row"><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="' + exs.length + '" aria-valuenow="' + feitos + '" aria-label="Exercícios concluídos"><span style="width:' + pct + '%"></span></div><span class="small soft nowrap">' + feitos + ' de ' + exs.length + ' exercícios</span></div></div>' +
       '<div class="sess-list">' + aviso + '<p class="small muted">Toque num exercício para abrir. Use as setas para mudar a ordem; dá para trocar, remover ou adicionar exercícios só para hoje.</p>' + itens +
@@ -1347,12 +1389,19 @@
     var outros = nomes.filter(function (n) { return !naDivisao[chaveNome(n)]; }).sort();
     if (outros.length) grupos += '<optgroup label="Outros">' + outros.map(function (n) { return '<option' + (mesmoNome(n, ui.evoEx) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</optgroup>';
 
-    var regs = registrosDe(ui.evoEx), ref = refEx(ui.evoEx), modo = ui.evoModo;
+    var livre = pesoLivre(ui.evoEx), acadsEx = [];
+    if (!livre) vivos().forEach(function (h) { if (h.exs.some(function (x) { return mesmoNome(x.nome, ui.evoEx); })) { var a = h.academia || ''; if (acadsEx.indexOf(a) < 0) acadsEx.push(a); } });
+    if (livre || acadsEx.length < 2) ui.evoAcad = 'todas';
+    else if (!ui.evoAcad || (ui.evoAcad !== 'todas' && acadsEx.indexOf(ui.evoAcad) < 0)) ui.evoAcad = acadsEx.indexOf(D.perfil.academia || '') >= 0 ? D.perfil.academia : 'todas';
+    var filtroAcad = ui.evoAcad === 'todas' ? null : ui.evoAcad;
+    var regs = filtroAcad !== null ? registrosDe(ui.evoEx, filtroAcad) : registrosDe(ui.evoEx), ref = filtroAcad !== null ? refEx(ui.evoEx, filtroAcad) : refEx(ui.evoEx), modo = ui.evoModo;
+    var selAcad = !livre && acadsEx.length >= 2 ? '<div class="field tight"><label for="evo-acad">Academia (máquina: cargas só se comparam no mesmo aparelho)</label><select id="evo-acad" class="input" data-change="evoAcad"><option value="todas"' + (ui.evoAcad === 'todas' ? ' selected' : '') + '>Todas (misturadas)</option>' +
+      acadsEx.filter(Boolean).map(function (a) { return '<option' + (ui.evoAcad === a ? ' selected' : '') + '>' + esc(a) + '</option>'; }).join('') + '</select></div>' : '';
     var pontos = regs.map(function (r) { return { x: ddmm(r.dia), y: modo === 'carga' ? r.top : Math.round(r.volume), dica: ddmm(r.dia) + (modo === 'carga' ? ' · ' + kg(r.topSet.carga) + ' kg × ' + r.topSet.reps : ' · ' + plural(r.sets.length, 'série', 'séries')) }; });
     if (modo === 'volume' && pontos.length > 16) pontos = pontos.slice(-16);
     var grafico = pontos.length >= 1 ? window.Graficos.registrar('evo', { tipo: modo === 'carga' ? 'linha' : 'barras', titulo: (modo === 'carga' ? 'Carga máxima' : 'Volume') + ' de ' + ui.evoEx, pontos: pontos, fmtY: function (v) { return kg(v) + ' kg'; }, fmtEixo: function (v) { return kg(v, 0); }, altura: 210, colunas: ['Data', modo === 'carga' ? 'Carga máxima' : 'Volume (kg)'] }) : '';
     var secEx = '<section class="section card flat" aria-labelledby="evo-t"><h2 class="section-title" id="evo-t">Por exercício</h2>' +
-      '<div class="field"><label for="evo-ex" class="sr-only">Exercício</label><select id="evo-ex" class="input" data-change="evoEx">' + grupos + '</select></div>' +
+      '<div class="field"><label for="evo-ex" class="sr-only">Exercício</label><select id="evo-ex" class="input" data-change="evoEx">' + grupos + '</select></div>' + selAcad +
       '<div class="segmented" role="group" aria-label="Medida"><button type="button" aria-pressed="' + (modo === 'carga') + '" data-act="evoModo" data-arg="carga">Carga máxima</button><button type="button" aria-pressed="' + (modo === 'volume') + '" data-act="evoModo" data-arg="volume">Volume (carga × reps)</button></div>' +
       grafico +
       (ref ? '<div class="stats3"><div><span class="muted small">Recorde</span><b>' + kg(ref.recorde) + ' kg</b><span class="small muted">' + ddmm(ref.recordeDia) + '</span></div><div><span class="muted small">Última</span><b>' + kg(ref.topSet.carga) + ' kg</b><span class="small muted">' + ddmm(ref.ult.dia) + '</span></div><div><span class="muted small">Registros</span><b>' + ref.n + '</b><span class="small muted">' + (ref.tendencia !== null ? (ref.tendencia > 0 ? 'subindo' : ref.tendencia < 0 ? 'caiu' : 'estável') : '—') + '</span></div></div>' : '') + '</section>';
@@ -1373,7 +1422,7 @@
       '<div class="stats3"><div><span class="muted small">Este mês</span><b>' + noMes + '</b><span class="small muted">dias treinados</span></div><div><span class="muted small">Mês anterior</span><b>' + mesAnt + '</b><span class="small muted">dias</span></div><div><span class="muted small">Média semanal</span><b>' + kg(media8, 1) + '</b><span class="small muted">últimas 8 sem.</span></div></div>' +
       window.Graficos.registrar('freq', { tipo: 'barras', titulo: 'Dias treinados por semana, últimas 12 semanas', pontos: semanas, fmtY: function (v) { return plural(v, 'dia', 'dias'); }, fmtEixo: function (v) { return String(v); }, altura: 170, colunas: ['Semana', 'Dias'] }) + '</section>';
 
-    var prs = nomes.map(function (n) { var r = refEx(n); return { n: n, r: r }; }).filter(function (o) { return o.r && o.r.recorde > 0; })
+    var prs = nomes.map(function (n) { var r = refEx(n, pesoLivre(n) ? null : D.perfil.academia); return { n: n, r: r && !r.outraAcademia ? r : null }; }).filter(function (o) { return o.r && o.r.recorde > 0; })
       .sort(function (a, b) { return a.r.recordeDia < b.r.recordeDia ? 1 : -1; });
     var linhasPR = prs.map(function (o) { return '<div class="list-row"><div><span class="nome">' + esc(o.n) + '</span><span class="small muted">' + esc(grupoDe(o.n)) + ' · ' + ddmm(o.r.recordeDia) + '</span></div><span class="delta up">' + kg(o.r.recorde) + ' kg</span></div>'; }).join('');
     var gPR = gaveta('recordes', 'Recordes pessoais', plural(prs.length, 'exercício', 'exercícios'), '<div class="list">' + (linhasPR || '<p class="small muted pad">Sem recordes ainda.</p>') + '</div>');
@@ -1411,9 +1460,9 @@
       if (mk !== mesAtual) { mesAtual = mk; html += '<h2 class="mes-tit">' + esc(deKey(mk + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })) + '</h2>'; }
       var n = h.exs.reduce(function (a, x) { return a + x.sets.length; }, 0), vol = h.exs.reduce(function (a, x) { return a + x.sets.reduce(function (b2, y) { return b2 + y.carga * y.reps; }, 0); }, 0);
       var aberto = !!ui.abertoHist[h.id];
-      html += '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirHist" data-arg="' + h.id + '"><span class="mini" aria-hidden="true">' + esc(h.letra) + '</span><span class="mid"><b>Treino ' + esc(h.letra) + ' · ' + esc(h.nome) + '</b><span class="small muted">' + h.duracao + ' min · ' + plural(n, 'série', 'séries') + ' · ' + Math.round(vol).toLocaleString('pt-BR') + ' kg' + (h.preTreino ? ' · pré-treino' : '') + '</span></span>' +
+      html += '<article class="sess-item"><button type="button" aria-expanded="' + aberto + '" data-act="abrirHist" data-arg="' + h.id + '"><span class="mini" aria-hidden="true">' + esc(h.letra) + '</span><span class="mid"><b>Treino ' + esc(h.letra) + ' · ' + esc(h.nome) + '</b><span class="small muted">' + h.duracao + ' min · ' + contaSeries([].concat.apply([], h.exs.map(function (x) { return x.sets; }))) + (h.academia ? ' · ' + esc(curtaAcad(h.academia)) : '') + (h.preTreino ? ' · pré-treino' : '') + '</span></span>' +
         '<span class="dt">' + esc(deKey(h.dia).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })) + '</span><span class="gaveta-seta">' + icon('chevDown', 18) + '</span></button>' +
-        (aberto ? '<div class="sess-det">' + h.exs.map(function (x) { return '<div class="ex' + (ui.filtroEx && mesmoNome(x.nome, ui.filtroEx) ? ' destaque' : '') + '"><b>' + esc(x.nome) + '</b><span>' + x.sets.map(function (y) { return kg(y.carga) + '×' + y.reps; }).join('  ·  ') + '</span></div>'; }).join('') +
+        (aberto ? '<div class="sess-det">' + h.exs.map(function (x) { return '<div class="ex' + (ui.filtroEx && mesmoNome(x.nome, ui.filtroEx) ? ' destaque' : '') + '"><b>' + esc(x.nome) + '</b><span>' + setsTxt(x.sets) + '</span></div>'; }).join('') +
           '<div class="row-actions"><button type="button" class="btn sm" aria-pressed="' + !!h.preTreino + '" data-act="histPre" data-arg="' + h.id + '">' + (h.preTreino ? 'Tirar marca de pré-treino' : 'Marcar: usei pré-treino') + '</button></div>' +
           '<button type="button" class="link" data-act="excluirHist" data-arg="' + h.id + '">Excluir este registro</button></div>' : '') + '</article>';
     });
@@ -1753,6 +1802,8 @@
     var el = e.target, k = el.getAttribute && el.getAttribute('data-change');
     if (k === 'evoEx') { ui.evoEx = el.value; render(); var s = document.getElementById('evo-ex'); if (s) s.focus(); }
     else if (k === 'grupoSel') { ui.grupo = el.value; aplicarBusca(); }
+    else if (k === 'academia' && D.sessao) { D.sessao.academia = el.value || null; if (el.value) D.perfil.academia = el.value; salvar(); render(); }
+    else if (k === 'evoAcad') { ui.evoAcad = el.value; render(); }
     else if (k === 'filtroEx') { ui.filtroEx = el.value; render(); var f = document.getElementById('f-ex'); if (f) f.focus(); }
   });
   document.addEventListener('input', function (e) {
